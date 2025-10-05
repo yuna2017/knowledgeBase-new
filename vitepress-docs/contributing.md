@@ -1,7 +1,3 @@
----
-title: 贡献指南
----
-
 # How To Contribute
 
 ## 主要流程
