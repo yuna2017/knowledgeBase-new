@@ -20,6 +20,10 @@ export default defineConfig({
       { text: '关于我们', link: '/moudle/about/' }
     ],
 
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/yuna2017/knowledgeBase-new' }
+    ],
+
     search: {
       provider: 'local'
     },
