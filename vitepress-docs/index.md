@@ -54,5 +54,5 @@ YUNA KnowledgeBase（"燕山大学师生问题指南"，以下简称 KB）由燕
 
 ## 🔗 相关链接
 
-- **GitHub 仓库**：[https://github.com/YSU-SNIA/KnowledgeBase](https://github.com/YSU-SNIA/KnowledgeBase)
-- **贡献指南**：欢迎参与项目建设，查看我们的[贡献指南](https://github.com/YSU-SNIA/KnowledgeBase/blob/main/CONTRIBUTING.md)
+- **GitHub 仓库**：[https://github.com/yuna2017/knowledgeBase-new](https://github.com/yuna2017/knowledgeBase-new)
+- **贡献指南**：欢迎参与项目建设，查看我们的[贡献指南](/contributing)
