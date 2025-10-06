@@ -15,7 +15,7 @@ next: { text: '答疑', link: '/moudle/network/qa/' }
 
 ## 如何接入
 
-宿舍网线，学校教学楼区域的WiFi信号`iYanDa`，学校宿舍区域的WiFi信号`iYanDa-Dormitory`，学区有线、无线网络均采用校园网认证系统，详情请看[连接与认证方式](www.bing.com)一文。
+宿舍网线，学校教学楼区域的WiFi信号`iYanDa`，学校宿舍区域的WiFi信号`iYanDa-Dormitory`，学区有线、无线网络均采用校园网认证系统，详情请看[连接与认证方式](https://www.bing.com)一文。
 
 ## 要不要办理校园宽带（校园卡）业务？
 
