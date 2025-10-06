@@ -61,15 +61,42 @@ export default defineConfig({
       '/moudle/service/': [
         { text: '一网通办', 
           items: [ 
-            { text: '概览', link: '/moudle/service/' } 
+            { text: '概览', link: '/moudle/service/' }, 
+            { text: '简介', link: '/moudle/service/index#简介' },
+            { text: '访问方式及使用指南', link: '/moudle/service/index#访问方式及使用指南' },
+            { text: '常用功能介绍', link: '/moudle/service/index#常用功能介绍' }
           ] 
-        }
+        },
+        { text: 'VPN', 
+          items: [ 
+            { text: '概览', link: '/moudle/service/vpn/' }
+          ] 
+        },
       ],
       '/moudle/ms/': [
-        { text: '正版化', items: [ { text: '概览', link: '/moudle/ms/' } ] }
+        { text: '正版化', 
+          items: [ 
+            { text: '概览', link: '/moudle/ms/' },
+            { text: '访问方式', link: '/moudle/ms/#访问方式' },
+            { text: '常用软件', link: '/moudle/ms/#常用软件' }
+           ] 
+        }
       ],
       '/moudle/mail/': [
-        { text: '校园邮箱', items: [ { text: '概览', link: '/moudle/mail/' } ] }
+        { text: '校园邮箱',
+           items: [
+             { text: '概览', link: '/moudle/mail/' },
+             { text: '简介', link: '/moudle/mail/#简介' },
+             { text: '账号申请与管理', link: '/moudle/mail/#账号申请与管理' },
+             { text: '可以白嫖的工具', link: '/moudle/mail/#可以白嫖的工具' }, 
+            ] 
+        },
+        {
+          text: '常见问题',
+          items: [
+            { text: '概览', link: '/moudle/mail/qa/' }
+          ]
+        },
       ],
       '/moudle/about/': [
         {
