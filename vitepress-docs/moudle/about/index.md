@@ -20,7 +20,7 @@ YUNA KnowledgeBase 是面向燕大师生的「问题导向」在线生活指南�
 我们欢迎师生共同完善内容。如发现错误、过时信息或有补充建议，可通过以下方式参与：
 
 - 在 GitHub 提交 Issue 或 Pull Request：`https://github.com/yuna2017/knowledgeBase-new`
-- 向我们发送邮件：[liuguanyu2020@outlook.com](mailto:liuguanyu2020@outlook.com)
+- 向我们发送邮件：[liugu0825@qq.com](mailto:liugu0825@qq.com)
 
 ## 内容更新与许可
 
