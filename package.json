@@ -1,7 +1,7 @@
 {
-  "name": "ysu-hpc-manual",
+  "name": "yuna-knowledge-base",
   "version": "1.0.0",
-  "description": "燕山大学GPU集群用户手册静态网站",
+  "description": "YUNA Knowledge Base",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev vitepress-docs",

@@ -33,5 +33,5 @@ jobs:
 
       - name: Upload to COS
         run: |
-          coscmd upload -r ./dist/ /   # 如果你的构建产物在 dist 目录
+          coscmd upload -r ./vitepress-docs/.vitepress/dist/ /   # 如果你的构建产物在 dist 目录
           # 或者 coscmd upload -r ./ /  上传整个项目目录
