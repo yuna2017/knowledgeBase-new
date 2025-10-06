@@ -8,7 +8,7 @@ export default defineConfig({
   
     
   head: [
-    ['link', { rel: 'icon', href: '/logo.png' }]
+    ['link', { rel: 'icon', href: '/images/logo.png' }]
   ],
   themeConfig: {
     nav: [
