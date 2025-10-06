@@ -31,7 +31,7 @@ next: false
 ### Office
 
 平台提供Windows平台下的Office `2021/2019/2016/2013` 专业增强版，以及Mac平台下的Office `2021/2019/2016/2011` 标准版，下面以Windows平台下的Office2021为例，介绍安装流程。  
-首先，在主页里点击`Office`板块，在展开的按钮中选择` Office2021 专业增强版`
+首先，在主页里点击`Office`板块，在展开的按钮中选择`Office2021 专业增强版`
 ![Office](./images/office.png)
 点击后会进入一个新页面
 ![Office2021](./images/office2021.png)
