@@ -47,6 +47,7 @@ next: false
 <!-- markdownlint-disable MD029 -->
 
 1. 点击[链接](https://github.com/settings/education/benefits?locale=en-US)，登录你的github账号后会进入申请页面。
+
 >注意，这里的github账号需要绑定你的校园邮箱账号。
 
 2. 点击`Start an application`，弹出一个申请窗口。
