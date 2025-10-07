@@ -22,8 +22,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+
       - name: Lint Markdown files
-        run: npx markdownlint '**/*.md' --ignore node_modules --disable MD033 MD041 MD013
+        run: markdownlint '**/*.md' --ignore node_modules --disable MD033 MD041 MD013
 
       - name: Build project
         run: npm run build
