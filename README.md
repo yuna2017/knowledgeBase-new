@@ -8,5 +8,5 @@
 
 ```text
 MIT License
-Copyright (c) 2017-2022 Yanshan University Student Net Information Association
+Copyright (c) 2017-2025 Yanshan University Student Net Information Association
 ```
