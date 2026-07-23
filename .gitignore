@@ -49,6 +49,7 @@ typings/
 
 # Optional npm cache directory
 .npm
+.npm-cache/
 
 # Optional eslint cache
 .eslintcache
@@ -90,6 +91,10 @@ dist
 
 # vuepress build output
 .vuepress/dist
+
+# VitePress generated files
+vitepress-docs/.vitepress/cache/
+vitepress-docs/.vitepress/dist/
 
 # Serverless directories
 .serverless/

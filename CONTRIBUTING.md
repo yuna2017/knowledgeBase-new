@@ -1,28 +1,48 @@
-# How To Contribute
+# 贡献指南
 
-## 主要流程
+欢迎补充和修正知识库内容。提交前请确认：
 
-1. 将本仓库 Fork 一份到你自己的 Github 账户上
-2. 在 Fork 的仓库内做出更改并提交
-3. 点击仓库的 Contribute 按钮
-4. 正确书写 Pull Request 内容，点击 Open
-5. 管理员在审核通过后会进行合并
+- 仓库地址为：https://github.com/yuna2017/knowledgeBase-new
+- 内容面向燕大师生的实际问题，步骤清晰可复现
+- 涉及额度、价格、入口、版本、套餐或政策时，注明核实时间并引用官方来源
+- 区分“官方规则”“登录后实测”和“个人经验”，不要把个案写成全校统一政策
+- 涉及海外服务时，说明中国大陆是否属于官方支持地区，以及注册、支付和网络限制
+- 命令必须实际验证；会删除文件、丢弃改动、公开端口或执行远程脚本时，提前写明风险
+- 不记录无法长期维护的促销数字；确有必要时写清活动截止日期
+- 图片放在 `vitepress-docs/images/` 下，并在文章中使用相对路径引用
+- 每篇 Markdown 顶部保留 `tags`，数量为 1 到 3 个
 
-## PR 书写规范
+## 添加或修改作者
 
-* 简练列出对项目的更改
-* 在需要时引用对应的 Issue
-* 尽量使用 Markdown 格式书写
+作者信息统一写在文章顶部的 frontmatter 中，不要再在正文里手写头像和作者卡片。
 
-## Commit规范
+```yaml
+---
+tags:
+  - 示例标签
+authors:
+  - author
+---
+```
 
-* 一个 commit 对应一个最小功能的改进。例如，对项目的代码格式进行更新时，应该对链接、图片、Markdown
-分别提交 commit
-* 每个 commit 要写清楚修改了哪些东西
-* 尽量使用 Markdown 格式书写
+一篇文章有多位作者时，可以依次添加：
 
-## 代码规范
+```yaml
+authors:
+  - author1
+  - author2
+```
 
-* 文章内引用其他 md 文件的链接应使用相对链接
-* 插入图片时，必须将图片保存在 `./img/[md file]/` 目录中，引用时使用相对路径引用
-* 尽量减少 HTML 代码的使用
+然后在 `vitepress-docs/.vitepress/theme/authors.ts` 的 `authorProfiles` 中加入对应关系：
+
+```ts
+'文章开头authors填入的名称': {
+  displayName: '站点中显示的名称',
+  github: 'your-github-id'
+},
+```
+
+- `authors` 中的值必须与 `authorProfiles` 的键完全一致
+- `displayName` 控制站点显示的作者名
+- `github` 用于生成 GitHub 主页链接和头像地址
+- 添加后无需在 Markdown 正文中重复填写作者信息
