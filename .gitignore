@@ -96,6 +96,11 @@ dist
 vitepress-docs/.vitepress/cache/
 vitepress-docs/.vitepress/dist/
 
+# Cloudflare Workers (Wrangler) 本地缓存与密钥
+.wrangler/
+.dev.vars
+.dev.vars.*
+
 # Serverless directories
 .serverless/
 

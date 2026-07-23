@@ -1,0 +1,13 @@
+name = "yuna-kb-views"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# 允许跨域访问的站点，多个用英文逗号分隔（origin 不带末尾斜杠）
+[vars]
+ALLOWED_ORIGINS = "https://docs.yuna.team,http://localhost:5173"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yuna-kb-views"
+# 执行 `npx wrangler d1 create yuna-kb-views` 后把返回的 id 填到这里
+database_id = "fa3ebf5a-5c7e-4c46-92a8-67f6bd65d2aa"

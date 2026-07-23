@@ -24,6 +24,8 @@ jobs:
 
       - name: Validate documentation and build
         run: npm run build
+        env:
+          VITE_VIEWS_API: https://yuna-kb-views.liuguanyu2020.workers.dev
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/pages-action@v1
