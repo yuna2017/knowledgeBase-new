@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useData } from 'vitepress'
-import { authorProfiles } from './authors'
+import { authorProfiles, defaultAuthorId } from './authors'
 
 const { frontmatter } = useData()
 
 const authors = computed(() => {
   const value = frontmatter.value.authors
-  const ids = Array.isArray(value) ? value : value ? [value] : []
+  const rawIds = Array.isArray(value) ? value : value ? [value] : []
+  const ids = rawIds
+    .map((rawId) => String(rawId ?? '').trim())
+    .filter(Boolean)
 
-  return ids.map((rawId) => {
-    const id = String(rawId).trim()
+  if (ids.length === 0) ids.push(defaultAuthorId)
+
+  return ids.map((id) => {
     const profile = authorProfiles[id] || {
       displayName: id,
       github: id

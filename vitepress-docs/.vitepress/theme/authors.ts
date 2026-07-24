@@ -3,7 +3,13 @@ export interface AuthorProfile {
   github: string
 }
 
+export const defaultAuthorId = 'yuna2017'
+
 export const authorProfiles: Record<string, AuthorProfile> = {
+  yuna2017: {
+    displayName: '燕山大学大学生网络信息协会',
+    github: 'yuna2017'
+  },
   HaoxiangXia: {
     displayName: 'Marth7th',
     github: 'HaoxiangXia'
@@ -17,4 +23,3 @@ export const authorProfiles: Record<string, AuthorProfile> = {
     github: 'liugu2023'
   }
 }
-
