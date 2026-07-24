@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DefaultTheme from 'vitepress/theme'
+import ArticleFreshness from './ArticleFreshness.vue'
 import ArticleTags from './ArticleTags.vue'
 import FrontmatterAuthors from './FrontmatterAuthors.vue'
 import ArticleViews from './ArticleViews.vue'
@@ -11,6 +12,7 @@ const { Layout } = DefaultTheme
 <template>
   <Layout>
     <template #doc-before>
+      <ArticleFreshness />
       <ArticleTags />
       <FrontmatterAuthors />
       <ArticleViews />

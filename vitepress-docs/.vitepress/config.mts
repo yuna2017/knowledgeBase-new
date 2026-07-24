@@ -107,6 +107,15 @@ export default defineConfig({
       prev: '上一篇',
       next: '下一篇'
     },
+    lastUpdated: {
+      text: '最后校准时间',
+      formatOptions: {
+        dateStyle: 'long',
+        timeStyle: 'short',
+        timeZone: 'Asia/Shanghai',
+        forceLocale: true
+      }
+    },
     footer: {
       message: 'MIT Licensed',
       copyright: 'Copyright © 2017-2026 燕山大学大学生网络信息协会'
