@@ -1,0 +1,35 @@
+name: PR 文档检查
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-doc-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  docs-check:
+    name: Markdown、链接与作者检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Markdown, authors and static build
+        run: npm run build

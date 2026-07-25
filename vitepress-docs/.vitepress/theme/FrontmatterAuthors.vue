@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useData } from 'vitepress'
 import { authorProfiles, defaultAuthorId } from './authors'
 
-const { frontmatter } = useData()
+const { frontmatter, page } = useData()
 
 const authors = computed(() => {
   const value = frontmatter.value.authors
@@ -15,9 +15,13 @@ const authors = computed(() => {
   if (ids.length === 0) ids.push(defaultAuthorId)
 
   return ids.map((id) => {
-    const profile = authorProfiles[id] || {
-      displayName: id,
-      github: id
+    const profile = authorProfiles[id]
+
+    if (!profile) {
+      throw new Error(
+        `[作者校验] ${page.value.relativePath}：authors 中的 "${id}" ` +
+        '未在 theme/authors.ts 的 authorProfiles 中登记'
+      )
     }
 
     return {
