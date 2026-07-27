@@ -1,0 +1,7 @@
+# YUNA KnowledgeBase — https://docs.yuna.team
+# 本文件由仓库维护，构建时从 vitepress-docs/public/ 原样复制到站点根目录。
+
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.yuna.team/sitemap.xml
