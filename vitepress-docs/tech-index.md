@@ -28,6 +28,7 @@ authors:
 - **[文献与科研工具指南](./tech-research-tools.md)**：Zotero 免费同步扩容、Overleaf / Typst 论文排版、找文献
 - **[MOOC 与免费学习资源](./tech-mooc.md)**：中国大学 MOOC、Coursera 助学金申请、CS 自学路线
 - **[Git 与 GitHub 入门](./tech-git-github.md)**：版本管理基础
+- **[HTTP/HTTPS 返回码大全](./tech-http-status-codes.md)**：状态码分类速查、非标准返回码与证书报错排查
 - **[免费与开源替代软件清单](./tech-oss-alternatives.md)**：常用付费软件的免费或开源替代品
 
 ### AI 工具、开发工具与自托管
