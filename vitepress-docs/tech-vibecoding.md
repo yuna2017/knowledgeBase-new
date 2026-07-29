@@ -8,7 +8,7 @@ authors:
   - HaoxiangXia
 ---
 
-# Vibe Coding 入门：从对话式原型开始
+# 第一次 Vibe Coding ：从对话式原型开始
 
 >「Vibe Coding」（氛围式编码）指的是用自然语言向 AI 描述需求，由 AI 代理（Agent）读写代码、运行命令、完成部分开发任务的编程方式。开发者主要负责描述需求、检查结果和决定是否合并改动。
 
