@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540">
+  <rect width="1200" height="540" fill="#fbfcfe"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">Claude Code 权限模式对比</text>
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <rect x="80" y="135" width="310" height="300" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="120" y="195" font-size="28" font-weight="700" fill="#172033">默认确认</text>
+    <text x="120" y="245" font-size="20" fill="#5b6472">写文件、运行命令前</text>
+    <text x="120" y="280" font-size="20" fill="#5b6472">按风险请求确认</text>
+    <text x="120" y="340" font-size="20" fill="#6374ff">适合新手和正式项目</text>
+    <rect x="445" y="135" width="310" height="300" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="485" y="195" font-size="28" font-weight="700" fill="#172033">计划模式</text>
+    <text x="485" y="245" font-size="20" fill="#5b6472">只读分析，不改文件</text>
+    <text x="485" y="280" font-size="20" fill="#5b6472">先对齐方案再执行</text>
+    <text x="485" y="340" font-size="20" fill="#6374ff">适合复杂需求</text>
+    <rect x="810" y="135" width="310" height="300" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="850" y="195" font-size="28" font-weight="700" fill="#172033">跳过确认</text>
+    <text x="850" y="245" font-size="20" fill="#5b6472">减少打断，风险更高</text>
+    <text x="850" y="280" font-size="20" fill="#5b6472">仅限沙盒或练习项目</text>
+    <text x="850" y="340" font-size="20" fill="#d65a31">生产环境不建议</text>
+  </g>
+</svg>

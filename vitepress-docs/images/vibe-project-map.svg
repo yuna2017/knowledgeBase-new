@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <rect width="1200" height="620" fill="#f7f8fb"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">Vibe Coding 项目选择地图</text>
+  <text x="60" y="112" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#5b6472">从小工具开始，逐步挑战数据、协作、AI、自动化项目</text>
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <rect x="80" y="165" width="230" height="260" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="115" y="220" font-size="26" font-weight="700" fill="#172033">初级</text>
+    <text x="115" y="270" font-size="20" fill="#5b6472">番茄钟</text>
+    <text x="115" y="305" font-size="20" fill="#5b6472">记账工具</text>
+    <text x="115" y="340" font-size="20" fill="#5b6472">Markdown 编辑器</text>
+    <rect x="360" y="165" width="230" height="260" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="395" y="220" font-size="26" font-weight="700" fill="#172033">中级</text>
+    <text x="395" y="270" font-size="20" fill="#5b6472">任务看板</text>
+    <text x="395" y="305" font-size="20" fill="#5b6472">知识库问答</text>
+    <text x="395" y="340" font-size="20" fill="#5b6472">部署监控面板</text>
+    <rect x="640" y="165" width="230" height="260" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="675" y="220" font-size="26" font-weight="700" fill="#172033">进阶</text>
+    <text x="675" y="270" font-size="20" fill="#5b6472">电商 MVP</text>
+    <text x="675" y="305" font-size="20" fill="#5b6472">AI 客服</text>
+    <text x="675" y="340" font-size="20" fill="#5b6472">协作白板</text>
+    <rect x="920" y="165" width="230" height="260" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="955" y="220" font-size="26" font-weight="700" fill="#172033">自动化</text>
+    <text x="955" y="270" font-size="20" fill="#5b6472">周报生成</text>
+    <text x="955" y="305" font-size="20" fill="#5b6472">数据巡检</text>
+    <text x="955" y="340" font-size="20" fill="#5b6472">内容流水线</text>
+  </g>
+</svg>

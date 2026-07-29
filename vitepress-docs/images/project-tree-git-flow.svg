@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <rect width="1200" height="620" fill="#f7f8fb"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">项目文件结构与 Git 提交流程</text>
+  <rect x="70" y="120" width="500" height="420" rx="10" fill="#0f1117"/>
+  <g font-family="Consolas, monospace" font-size="22" fill="#d8dee9">
+    <text x="105" y="170">express-demo/</text>
+    <text x="135" y="210">├─ package.json</text>
+    <text x="135" y="250">├─ src/</text>
+    <text x="165" y="290">│  ├─ app.js</text>
+    <text x="165" y="330">│  └─ routes/health.js</text>
+    <text x="135" y="370">├─ tests/</text>
+    <text x="165" y="410">│  └─ health.test.js</text>
+    <text x="135" y="450">└─ README.md</text>
+  </g>
+  <rect x="650" y="120" width="480" height="420" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <text x="690" y="175" font-size="26" font-weight="700" fill="#172033">建议提交节奏</text>
+    <circle cx="705" cy="235" r="10" fill="#6374ff"/><text x="730" y="243" font-size="22" fill="#384150">初始化项目骨架</text>
+    <circle cx="705" cy="295" r="10" fill="#6374ff"/><text x="730" y="303" font-size="22" fill="#384150">实现核心接口</text>
+    <circle cx="705" cy="355" r="10" fill="#6374ff"/><text x="730" y="363" font-size="22" fill="#384150">补充测试与文档</text>
+    <circle cx="705" cy="415" r="10" fill="#6374ff"/><text x="730" y="423" font-size="22" fill="#384150">运行验证后提交</text>
+    <text x="690" y="495" font-size="20" fill="#5b6472">commit: feat(api): add health endpoint</text>
+  </g>
+</svg>
