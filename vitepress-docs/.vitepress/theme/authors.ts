@@ -21,5 +21,9 @@ export const authorProfiles: Record<string, AuthorProfile> = {
   liugu2023: {
     displayName: 'liugu2023',
     github: 'liugu2023'
+  },
+  bytehunter: {
+    displayName: '南',
+    github: 'bytehunter-official'
   }
 }
