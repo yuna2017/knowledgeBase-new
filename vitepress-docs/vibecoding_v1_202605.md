@@ -6,6 +6,7 @@ authors:
   - bytehunter
 ---
 
+# Vibe Coding实战教程_v1
 
 ## 目录
 
