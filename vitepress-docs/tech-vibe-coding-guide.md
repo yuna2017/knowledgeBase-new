@@ -5,11 +5,12 @@ tags:
   - 开发工具
 authors:
   - kindness314
+  - HaoxiangXia
 ---
 
 # Vibe Coding 使用指南
 
-这篇指南面向刚开始使用 AI 编程工具的同学。目标不是收集尽可能多的插件，而是先建立一套不会轻易丢代码、泄露密钥或被过时命令卡住的工作方式。
+这篇指南面向刚开始学习使用 AIDE / AI Coding Agnet（AI编程智能体）的同学。目标不是收集尽可能多的插件，而是先建立一套不会轻易丢代码、泄露密钥或被过时命令卡住的工作方式。
 
 最近核对：2026 年 7 月 10 日。模型名称、订阅额度、CLI 参数和社区项目会继续变化，执行前仍应查看链接中的官方说明。
 
@@ -43,6 +44,7 @@ Claude、OpenAI 和 Gemini API 的官方支持地区目前均不包含中国大�
 ## 01 · 开始前的安全底线
 
 ### 先让 Git 保护项目
+安装详见[Git 与 GitHub 入门](./tech-git-github.md)
 
 进入项目目录后，先检查状态：
 
@@ -110,49 +112,45 @@ uvx --from git+<官方仓库地址>
 
 ---
 
-## 02 · 安装 Claude Code
+## 02 · 安装 Oh My Pi
 
-Anthropic 当前推荐原生安装。旧的 npm 安装方式已被官方标记为 deprecated，不再作为本指南的首选。
+> A coding agent with the IDE wired in.
+
+- [官网](https://omp.sh/)
+- [Github仓库](https://github.com/can1357/oh-my-pi)
+
+### 官方推荐使用bun安装
+
+```bash
+bun install -g @oh-my-pi/pi-coding-agent
+```
 
 ### Windows PowerShell
 
 ```powershell
-irm https://claude.ai/install.ps1 | iex
+irm https://omp.sh/install.ps1 | iex
 ```
-
-也可以使用 WinGet：
-
-```powershell
-winget install Anthropic.ClaudeCode
-```
-
-原生 Windows 建议安装 Git for Windows。Claude Code 可使用其中的 Bash 工具；没有安装时会改用 PowerShell。
 
 ### macOS / Linux / WSL
 
 ```bash
-curl -fsSL https://claude.ai/install.sh | bash
+curl -fsSL https://omp.sh/install | sh
 ```
 
 macOS 或 Linux 也可使用 Homebrew：
 
 ```bash
-brew install --cask claude-code
+brew install can1357/tap/omp
 ```
 
 ### 验证
 
 ```bash
-claude --version
+omp --version
 claude
 ```
 
-首次运行会进入登录或认证流程。是否能使用订阅或 API，取决于账号类型、支持地区和当前产品政策。
-
-官方文档：
-
-- [Claude Code 安装](https://code.claude.com/docs/en/setup)
-- [Claude Code 概览](https://code.claude.com/docs/en/overview)
+首次运行会进入初始化设置及添加模型流程。
 
 ---
 
@@ -386,15 +384,9 @@ git diff
 
 ---
 
-## 09 · CLAUDE.md 与 AGENTS.md
+## 09 · AGENTS.md
 
 把稳定的项目约定写进仓库，可以减少每次重复说明。
-
-Claude Code 常用：
-
-```text
-<项目根>/CLAUDE.md
-```
 
 Codex 常用：
 
@@ -419,7 +411,6 @@ Codex 常用：
 - 删除、发布、推送和其他不可逆操作先等待确认。
 ```
 
-- [Claude Code memory / CLAUDE.md](https://code.claude.com/docs/en/memory)
 - [Codex AGENTS.md](https://developers.openai.com/codex/guides/agents-md)
 
 ---
