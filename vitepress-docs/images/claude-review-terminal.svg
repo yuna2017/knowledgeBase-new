@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#101319"/>
+  <rect x="70" y="70" width="1060" height="420" rx="12" fill="#171b24" stroke="#2e3440"/>
+  <g font-family="Consolas, monospace" font-size="23">
+    <text x="110" y="130" fill="#8bd5ff">&gt; /review</text>
+    <text x="110" y="185" fill="#d8dee9">Reviewing changed files...</text>
+    <text x="110" y="245" fill="#fca5a5">[P1] Missing authorization check in admin route</text>
+    <text x="110" y="285" fill="#fcd34d">[P2] Product price accepts negative values</text>
+    <text x="110" y="325" fill="#a7f3d0">[P3] Add test for empty cart checkout</text>
+    <text x="110" y="395" fill="#d8dee9">Summary: 1 blocking issue, 2 follow-up issues.</text>
+  </g>
+  <text x="70" y="530" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#7d8799">示意图：实际输出会随项目和 Claude Code 版本变化</text>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#0f1117"/>
+  <rect x="54" y="50" width="1092" height="460" rx="12" fill="#171a22" stroke="#2d3442"/>
+  <text x="90" y="100" font-family="Consolas, monospace" font-size="28" fill="#f5f7fb">$ claude</text>
+  <text x="90" y="152" font-family="Consolas, monospace" font-size="26" fill="#8bd5ff">&gt; /model</text>
+  <text x="90" y="205" font-family="Microsoft YaHei, Arial, sans-serif" font-size="24" fill="#f5f7fb">选择当前会话模型</text>
+  <g font-family="Microsoft YaHei, Arial, sans-serif" font-size="22">
+    <rect x="90" y="240" width="1010" height="58" rx="8" fill="#223047" stroke="#607dff"/>
+    <text x="120" y="277" fill="#ffffff">● Sonnet 4.6：日常开发、功能实现、Bug 修复</text>
+    <rect x="90" y="315" width="1010" height="58" rx="8" fill="#20232d" stroke="#363d4e"/>
+    <text x="120" y="352" fill="#dfe6f5">○ Opus 4.7：复杂架构、疑难问题、深度推理</text>
+    <rect x="90" y="390" width="1010" height="58" rx="8" fill="#20232d" stroke="#363d4e"/>
+    <text x="120" y="427" fill="#dfe6f5">○ Haiku 4.5：轻量任务、批量处理、成本敏感</text>
+  </g>
+  <text x="90" y="488" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#96a0b5">示意图：实际模型列表会随 Claude Code 版本和账号权限变化</text>
+</svg>
