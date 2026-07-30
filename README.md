@@ -27,15 +27,35 @@ YUNA KnowledgeBase 是面向燕山大学师生的在线生活指南，由燕山�
 
 ## 本地运行
 
+使用 npm（仓库已提交 `package-lock.json`，推荐）：
+
 ```sh
 npm ci
 npm run dev
 ```
 
+其他包管理器同样可以（项目是纯 ESM 依赖，无 npm 专有特性）：
+
+```sh
+# bun（生成的 bun.lock 已被 gitignore，请勿提交）
+bun install
+bun run dev
+
+# pnpm
+pnpm install
+pnpm dev
+
+# yarn（兼容，建议使用默认的 node-modules 链接模式）
+yarn install
+yarn dev
+```
+
+注意：`build` 的 `prebuild` 钩子内部调用 `npm run check:docs`，无论用哪个包管理器都需要本机装有 npm；并且请不要混用多个包管理器提交各自的 lockfile。
+
 构建并同时检查本地文档链接与页面可达性：
 
 ```sh
-npm run build
+npm run build   # 或 bun run build / pnpm build / yarn build
 ```
 
 站点由 VitePress 构建，正文位于 `vitepress-docs`，静态图片位于 `vitepress-docs/images`。
