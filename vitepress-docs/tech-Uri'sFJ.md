@@ -1,8 +1,7 @@
 ---
 tags:
-  - Vibe Coding
-  - AI工具
   - 开发入门
+  - 自学408
 authors:
   - yuna2017
 ---
