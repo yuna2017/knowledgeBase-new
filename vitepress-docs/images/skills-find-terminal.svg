@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#101319"/>
+  <rect x="70" y="70" width="1060" height="420" rx="12" fill="#171b24" stroke="#2e3440"/>
+  <g font-family="Consolas, monospace" font-size="24">
+    <text x="110" y="130" fill="#8bd5ff">$ npx skills find react component</text>
+    <text x="110" y="190" fill="#d8dee9">Found 3 skills</text>
+    <text x="110" y="245" fill="#a7f3d0">✓ react-component-generator</text>
+    <text x="150" y="285" fill="#9ca3af">Generate reusable React components with props and tests</text>
+    <text x="110" y="345" fill="#a7f3d0">✓ frontend-design-review</text>
+    <text x="150" y="385" fill="#9ca3af">Review layout, responsive behavior, and accessibility</text>
+    <text x="110" y="445" fill="#8bd5ff">$ npx skills install react-component-generator</text>
+  </g>
+  <text x="70" y="530" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#7d8799">示意图：命令和输出以实际 CLI 版本为准</text>
+</svg>

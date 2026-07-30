@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#f7f8fb"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">商品模块开发流程</text>
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <rect x="80" y="155" width="220" height="180" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="120" y="215" font-size="24" font-weight="700" fill="#172033">数据模型</text>
+    <text x="120" y="260" font-size="18" fill="#5b6472">Product</text>
+    <text x="120" y="290" font-size="18" fill="#5b6472">Category</text>
+    <path d="M320 245h90" stroke="#6374ff" stroke-width="5" marker-end="url(#arrow)"/>
+    <rect x="430" y="155" width="220" height="180" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="470" y="215" font-size="24" font-weight="700" fill="#172033">API</text>
+    <text x="470" y="260" font-size="18" fill="#5b6472">列表 / 详情</text>
+    <text x="470" y="290" font-size="18" fill="#5b6472">新增 / 编辑</text>
+    <path d="M670 245h90" stroke="#6374ff" stroke-width="5" marker-end="url(#arrow)"/>
+    <rect x="780" y="155" width="220" height="180" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="820" y="215" font-size="24" font-weight="700" fill="#172033">页面</text>
+    <text x="820" y="260" font-size="18" fill="#5b6472">商品列表</text>
+    <text x="820" y="290" font-size="18" fill="#5b6472">后台管理</text>
+    <path d="M890 350v70" stroke="#6374ff" stroke-width="5" marker-end="url(#arrow)"/>
+    <rect x="700" y="430" width="380" height="70" rx="10" fill="#172033"/>
+    <text x="735" y="475" font-size="22" fill="#ffffff">运行测试 + 人工验收 + Git 提交</text>
+  </g>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6374ff"/></marker></defs>
+</svg>

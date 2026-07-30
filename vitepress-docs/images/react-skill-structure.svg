@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <rect width="1200" height="620" fill="#fbfcfe"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">React 组件 Skill 生成后的目录结构</text>
+  <rect x="80" y="120" width="1040" height="420" rx="10" fill="#0f1117"/>
+  <g font-family="Consolas, monospace" font-size="24" fill="#d8dee9">
+    <text x="120" y="175">.claude/skills/react-component-generator/</text>
+    <text x="155" y="220">├─ SKILL.md                # 技能说明与触发条件</text>
+    <text x="155" y="265">├─ references/</text>
+    <text x="190" y="310">│  ├─ component-template.tsx</text>
+    <text x="190" y="355">│  └─ testing-template.md</text>
+    <text x="155" y="400">├─ scripts/</text>
+    <text x="190" y="445">│  └─ validate-component.js</text>
+    <text x="155" y="490">└─ README.md</text>
+  </g>
+</svg>

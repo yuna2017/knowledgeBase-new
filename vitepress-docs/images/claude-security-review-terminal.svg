@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#101319"/>
+  <rect x="70" y="70" width="1060" height="420" rx="12" fill="#171b24" stroke="#2e3440"/>
+  <g font-family="Consolas, monospace" font-size="23">
+    <text x="110" y="130" fill="#8bd5ff">&gt; /security-review</text>
+    <text x="110" y="185" fill="#d8dee9">Checking auth, input validation, secrets, and data access...</text>
+    <text x="110" y="245" fill="#fca5a5">HIGH  Admin API lacks role verification</text>
+    <text x="110" y="285" fill="#fcd34d">MED   Login endpoint needs rate limiting</text>
+    <text x="110" y="325" fill="#fcd34d">MED   Missing server-side price validation</text>
+    <text x="110" y="395" fill="#a7f3d0">PASS  No hard-coded secrets found in tracked files</text>
+  </g>
+  <text x="70" y="530" font-family="Microsoft YaHei, Arial, sans-serif" font-size="18" fill="#7d8799">示意图：用于说明安全审查输出结构</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560">
+  <rect width="1200" height="560" fill="#fbfcfe"/>
+  <text x="60" y="72" font-family="Microsoft YaHei, Arial, sans-serif" font-size="34" font-weight="700" fill="#172033">Claude Code 创建 Express 项目流程</text>
+  <g font-family="Microsoft YaHei, Arial, sans-serif">
+    <rect x="70" y="130" width="260" height="310" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="105" y="180" font-size="26" font-weight="700" fill="#172033">1. 规划</text>
+    <text x="105" y="225" font-size="20" fill="#5b6472">/plan 确认目标</text>
+    <text x="105" y="260" font-size="20" fill="#5b6472">接口、目录、测试</text>
+    <rect x="470" y="130" width="260" height="310" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="505" y="180" font-size="26" font-weight="700" fill="#172033">2. 实现</text>
+    <text x="505" y="225" font-size="20" fill="#5b6472">创建 package.json</text>
+    <text x="505" y="260" font-size="20" fill="#5b6472">编写 app.js / routes</text>
+    <text x="505" y="295" font-size="20" fill="#5b6472">安装依赖</text>
+    <rect x="870" y="130" width="260" height="310" rx="10" fill="#ffffff" stroke="#d9dee8"/>
+    <text x="905" y="180" font-size="26" font-weight="700" fill="#172033">3. 验证</text>
+    <text x="905" y="225" font-size="20" fill="#5b6472">npm test</text>
+    <text x="905" y="260" font-size="20" fill="#5b6472">npm run dev</text>
+    <text x="905" y="295" font-size="20" fill="#5b6472">curl /health</text>
+    <path d="M350 285h90" stroke="#6374ff" stroke-width="5" marker-end="url(#arrow)"/>
+    <path d="M750 285h90" stroke="#6374ff" stroke-width="5" marker-end="url(#arrow)"/>
+  </g>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6374ff"/></marker></defs>
+</svg>
