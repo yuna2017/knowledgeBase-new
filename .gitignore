@@ -115,3 +115,6 @@ vitepress-docs/.vitepress/dist/
 
 # TernJS port file
 .tern-port
+
+# settings
+.obsidian
