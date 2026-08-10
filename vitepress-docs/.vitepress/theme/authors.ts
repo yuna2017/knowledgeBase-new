@@ -25,5 +25,9 @@ export const authorProfiles: Record<string, AuthorProfile> = {
   bytehunter: {
     displayName: '南',
     github: 'bytehunter-official'
+  },
+  Benincasamatch: {
+    displayName: '冬瓜Benny',
+    github: 'Benincasamatch'
   }
 }
