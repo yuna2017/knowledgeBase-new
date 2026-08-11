@@ -108,13 +108,130 @@
 .tag-cloud {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 20px 0 32px;
+}
+
+/* /tags 页的标签云按文档数分四档，字号体现主次；文章页的 chip 不受影响 */
+.tag-cloud .tag-chip--level-1 { font-size: 13px; }
+.tag-cloud .tag-chip--level-2 { font-size: 15px; }
+.tag-cloud .tag-chip--level-3 { font-size: 17px; }
+
+.tag-cloud .tag-chip--level-4 {
+  font-size: 19px;
+  font-weight: 600;
+  border-color: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
 }
 
 .tag-chip__count {
   color: var(--vp-c-text-3);
   font-size: 12px;
+}
+
+.tag-page-meta {
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+}
+
+/* ---- 标签页 ---- */
+
+.tag-head {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.tag-head__crumb {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--vp-c-text-3);
+  font-size: 14px;
+}
+
+.tag-head h1 {
+  margin: 8px 0 0;
+  letter-spacing: -0.02em;
+}
+
+.tag-head__meta {
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+}
+
+/* 文档列表用卡片网格：单列细长列表在关掉右侧栏后会显得很空 */
+.tag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin: 24px 0 0;
+}
+
+.tag-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  text-decoration: none !important;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.tag-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  transform: translateY(-1px);
+}
+
+.tag-card__title {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.tag-card:hover .tag-card__title {
+  color: var(--vp-c-brand-1);
+}
+
+.tag-card__desc {
+  flex: 1;
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tag-card__date {
+  margin-top: 12px;
+  color: var(--vp-c-text-3);
+  font-size: 13px;
+}
+
+.tag-related {
+  margin-top: 44px;
+  padding: 20px 22px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+}
+
+.tag-related__title {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  font-size: 17px !important;
+}
+
+.tag-related__hint {
+  margin: 4px 0 14px !important;
+  color: var(--vp-c-text-3);
+  font-size: 14px;
+}
+
+.tag-related .tag-cloud {
+  margin: 0;
 }
 
 .tag-section {
@@ -127,6 +244,39 @@
 
 .tag-document-list li + li {
   margin-top: 6px;
+}
+
+/* 最近更新页 */
+.recent-group + .recent-group {
+  margin-top: 32px;
+}
+
+.recent-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.recent-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vp-c-divider-light);
+}
+
+.recent-list__meta {
+  margin-left: auto;
+  color: var(--vp-c-text-3);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .recent-list__meta {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 .article-views {
@@ -146,7 +296,20 @@
 .top-views {
   max-width: 1152px;
   margin: 0 auto;
-  padding: 0 24px 48px;
+  /* 上边距把它和首页 features 的三个卡片拉开，不然挤在一起像是卡片的一部分 */
+  padding: 40px 24px 48px;
+}
+
+@media (min-width: 640px) {
+  .top-views {
+    padding-top: 56px;
+  }
+}
+
+@media (min-width: 960px) {
+  .top-views {
+    padding-top: 72px;
+  }
 }
 
 .top-views__title {
