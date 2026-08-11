@@ -1,9 +1,29 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { BiDirectionalLinks } from '@nolebase/markdown-it-bi-directional-links'
+import {
+  GitChangelog,
+  GitChangelogMarkdownSection
+} from '@nolebase/vitepress-plugin-git-changelog/vite'
+import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-inline-link-preview/markdown-it'
 import { defineConfig } from 'vitepress'
+import { extractDescription } from './shared/markdown'
 
 /** 站点正式域名，改域名时只改这一处。用于 canonical、og:url 和 sitemap。 */
 const SITE_URL = 'https://docs.yuna.team'
+
+/** 仓库地址，页面历史的「查看完整历史」指向这里。 */
+const REPO_URL = 'https://github.com/yuna2017/knowledgeBase-new'
+
+/**
+ * 不注入「页面历史」区块的页面。
+ * 首页是 home 布局，tags / recent 是聚合页，本身没有修订史可言。
+ */
+const CHANGELOG_EXCLUDES = ['index.md', 'tags.md', 'recent.md']
+
+/** tags/ 下是动态路由生成的标签页，同样不需要修订史。 */
+function isGeneratedPage(id: string): boolean {
+  return /[\\/]tags[\\/]/.test(id)
+}
 
 /** 社交平台分享缩略图。换成 1200×630 的图后，同步改下面的宽高。 */
 const OG_IMAGE = {
@@ -21,81 +41,6 @@ function pageUrl(relativePath: string): string {
   return SITE_URL + '/' + path
 }
 
-/** 去掉行内 Markdown 语法，只留纯文字。 */
-function stripInline(text: string): string {
-  return text
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')    // 图片
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // 链接只留文字
-    .replace(/`([^`]*)`/g, '$1')             // 行内代码
-    .replace(/[*_~]/g, '')                   // 强调符号
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function truncate(text: string): string {
-  return text.length > 150 ? text.slice(0, 149).trimEnd() + '…' : text
-}
-
-/** 读取 Markdown 源文件，并展开 VitePress 的 <!--@include: xxx--> 引入。 */
-function readMarkdown(file: string, depth = 0): string {
-  let raw: string
-  try {
-    raw = readFileSync(file, 'utf8')
-  } catch {
-    return ''
-  }
-
-  raw = raw
-    .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')      // frontmatter
-    .replace(/<script[\s\S]*?<\/script>/gi, '')          // Vue <script setup>
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/^```[\s\S]*?^```/gm, '')                   // 围栏代码块
-  if (depth >= 2) return raw
-
-  // CONTRIBUTING.md 这类页面整篇都是一条 include，不展开就取不到任何描述
-  return raw.replace(/<!--\s*@include:\s*(.+?)\s*-->/g, (_match, target: string) => {
-    return readMarkdown(resolve(dirname(file), target.split('{')[0].trim()), depth + 1)
-  })
-}
-
-/**
- * 从 Markdown 正文里取第一段可读文字作为页面描述。
- * 这样不必给每篇文章手写 description，也不会让所有页面共用同一句站点简介。
- * 段落和列表按文档顺序取先出现的那个——不少页面（如 tech-mooc）标题之后直接就是列表。
- * 文章 frontmatter 里显式写了 description 时，以那个为准。
- */
-function extractDescription(srcDir: string, relativePath: string): string {
-  const body = readMarkdown(join(srcDir, relativePath))
-
-  for (const block of body.split(/\r?\n\s*\r?\n/)) {
-    const trimmed = block.trim()
-    // 跳过标题、表格和原始 HTML
-    if (
-      !trimmed ||
-      trimmed.startsWith('#') ||
-      trimmed.startsWith('|') ||
-      trimmed.startsWith('<')
-    ) {
-      continue
-    }
-
-    let text: string
-    if (/^\s*(?:[-*+]|\d+\.)\s/.test(trimmed)) {
-      text = trimmed
-        .split(/\r?\n/)
-        .map((line) => stripInline(line.replace(/^\s*(?:[-*+]|\d+\.)\s+/, '')))
-        .filter((line) => line.length >= 4)
-        .join('；')
-    } else {
-      text = stripInline(trimmed.replace(/^>\s?/gm, ''))
-    }
-
-    if (text.length >= 10) return truncate(text)
-  }
-
-  return ''
-}
-
 export default defineConfig({
   title: 'YUNA KnowledgeBase',
   description: '面向问题的燕大师生在线生活指南',
@@ -107,6 +52,55 @@ export default defineConfig({
   // 构建时生成 /sitemap.xml，lastUpdated 开启后会带上每页的 lastmod
   sitemap: {
     hostname: SITE_URL
+  },
+
+  vite: {
+    plugins: [
+      // 构建时读 git log，生成每页的修订历史数据。
+      // 只用它的「页面历史」区块，作者展示仍由 frontmatter + FrontmatterAuthors.vue
+      // 负责，所以不需要配 mapAuthors（页面历史本身不显示作者名）。
+      // 依赖完整的提交历史：CI 里 actions/checkout 必须保持 fetch-depth: 0，
+      // 浅克隆会让所有页面拿到同一个时间（与 lastUpdated 是同一个坑）。
+      GitChangelog({
+        repoURL: () => REPO_URL
+      }),
+      // 把「页面历史」注入到每篇文章末尾，不需要逐页放组件。
+      // 贡献者区块关掉：作者展示仍由 frontmatter + FrontmatterAuthors.vue 负责，
+      // 两者同时开会在同一页出现两份署名。
+      GitChangelogMarkdownSection({
+        excludes: CHANGELOG_EXCLUDES,
+        // 动态路由生成的标签页，id 是 tags/校园网.md 这种解析后的路径，
+        // 用 excludes 的字面名单匹配不到，只能靠这个函数拦
+        exclude: (id) => isGeneratedPage(id),
+        sections: {
+          disableContributors: true
+        }
+      })
+    ],
+    optimizeDeps: {
+      exclude: [
+        '@nolebase/vitepress-plugin-git-changelog/client',
+        '@nolebase/vitepress-plugin-inline-link-preview/client'
+      ]
+    },
+    ssr: {
+      noExternal: [
+        '@nolebase/vitepress-plugin-git-changelog',
+        '@nolebase/vitepress-plugin-inline-link-preview',
+        '@nolebase/ui'
+      ]
+    }
+  },
+
+  markdown: {
+    config(md) {
+      // Obsidian 风格的 [[双向链接]]，改名或移动文件时不容易断链
+      md.use(BiDirectionalLinks({
+        dir: 'vitepress-docs'
+      }))
+      // 站内链接悬停时弹出目标页面的预览
+      md.use(InlineLinkPreviewElementTransform)
+    }
   },
 
   head: [
@@ -131,6 +125,19 @@ export default defineConfig({
     const isHome = pageData.frontmatter.layout === 'home'
     const url = pageUrl(pageData.relativePath)
 
+    /**
+     * 标签页的 <h1> 写的是 {{ $params.name }}，而 VitePress 在解析阶段就把
+     * 标题抓走了——那时候 Vue 还没渲染，抓到的是模板字面量。
+     * 这里用路由参数覆盖掉，浏览器标签页、分享卡片和站内搜索才拿得到真实标签名。
+     */
+    const tagName = typeof pageData.params?.name === 'string'
+      ? pageData.params.name
+      : ''
+    if (tagName) {
+      pageData.title = tagName
+      pageData.frontmatter.title = tagName
+    }
+
     // 与 VitePress 实际渲染的 <title> 保持一致，避免分享卡片和标签页标题对不上
     const pageTitle = pageData.frontmatter.title || pageData.title || ''
     const fullTitle = isHome || !pageTitle
@@ -139,6 +146,9 @@ export default defineConfig({
 
     const description =
       pageData.frontmatter.description ||
+      (tagName
+        ? `归入「${tagName}」标签的 ${pageData.params?.count ?? 0} 篇文档。`
+        : '') ||
       (isHome ? '' : extractDescription(siteConfig.srcDir, pageData.relativePath)) ||
       siteConfig.site.description
 
@@ -171,6 +181,7 @@ export default defineConfig({
       },
       { text: '技术资源', link: '/tech-index' },
       { text: '标签', link: '/tags' },
+      { text: '最近更新', link: '/recent' },
       {
         text: '参与维护',
         items: [
@@ -182,12 +193,9 @@ export default defineConfig({
     ],
 
     sidebar: [
-      {
-        text: '文档入口',
-        items: [
-          { text: '标签', link: '/tags' }
-        ]
-      },
+      // 标签与最近更新只放在顶部 nav，不进 sidebar：
+      // sidebar 的顺序同时决定「上一篇/下一篇」的串联，聚合页混在里面会让
+      // 文章的上一篇指到「最近更新」这种非文章页去
       {
         text: '校园网',
         items: [
@@ -230,16 +238,9 @@ export default defineConfig({
           { text: 'API 中转站简介', link: '/tech-relay' },
           { text: '自托管入门', link: '/tech-self-hosting' }
         ]
-      },
-      {
-        text: '项目维护',
-        collapsed: true,
-        items: [
-          { text: '仓库说明', link: '/README' },
-          { text: '内容术语与维护规范', link: '/CONTEXT' },
-          { text: '贡献指南', link: '/CONTRIBUTING' }
-        ]
       }
+      // 「项目维护」（仓库说明 / 内容规范 / 贡献指南）只放在顶部 nav 的「参与维护」里。
+      // 放进 sidebar 会把它们串进文章的上一篇/下一篇，读者看完自托管入门会被带到仓库说明去。
     ],
 
     outline: [2, 3],
