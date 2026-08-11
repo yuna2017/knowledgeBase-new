@@ -21,7 +21,31 @@
 
 - 图片放在 `vitepress-docs/images/` 下，并在文章中使用相对路径引用
 - 每篇 Markdown 顶部保留 `tags`，数量为 1 到 3 个
+- frontmatter 的结束分隔符 `---` 只写一次，多写一行会让 YAML 解析失败
 - 搜索引擎摘要和分享卡片的描述，默认自动取正文第一段（或第一组列表）。想自己指定时，在 frontmatter 里加一行 `description:`，控制在 150 字以内
+
+## 站内链接
+
+除标准 Markdown 链接外，支持 Obsidian 风格的双向链接，直接写文件名（不带 `.md`）：
+
+```markdown
+详见 [[tech-git-github]]，也可以自定义显示文字：[[tech-git-github|Git 入门]]
+```
+
+站内链接在阅读时会有悬停预览，读者不用跳走就能看到目标页内容。
+
+## 标签
+
+每个标签都有自己的页面，地址是 `/tags/<标签名>`（名字里的空格换成连字符，例如
+`Vibe Coding` → `/tags/Vibe-Coding`）。新增标签前先在[标签页](https://docs.yuna.team/tags)
+看一眼有没有近义的，优先复用已有标签。
+
+## 页面历史
+
+每篇文章底部的「页面历史」由 git 提交记录自动生成，不需要手写。它依赖完整的提交历史：
+CI 里 `actions/checkout` 必须保持 `fetch-depth: 0`，浅克隆会让所有页面显示同一个时间。
+
+全站的[最近更新](https://docs.yuna.team/recent)页同理，数据来自各文件最后一次提交。
 
 ## 提交前本地预览
 
