@@ -2,11 +2,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { withBase } from 'vitepress'
 import { data as pages } from '../../pages.data'
+import { isRankableArticle } from './page-kind'
 
 interface TopItem {
   page: string
   views: number
 }
+
+/** 首页展示几条 */
+const DISPLAY_COUNT = 3
 
 const api = import.meta.env.VITE_VIEWS_API
 const items = ref<TopItem[]>([])
@@ -19,17 +23,23 @@ const titleMap = computed(() => {
 })
 
 const ranked = computed(() =>
-  items.value.map((item) => ({
-    url: item.page,
-    views: item.views,
-    title: titleMap.value.get(item.page) || item.page
-  }))
+  items.value
+    // 标签、贡献指南这类页面也有访问量，但它们不是知识库文章，
+    // 混进排行会把首页最显眼的位置让给入口页和维护文档
+    .filter((item) => isRankableArticle(item.page))
+    .slice(0, DISPLAY_COUNT)
+    .map((item) => ({
+      url: item.page,
+      views: item.views,
+      title: titleMap.value.get(item.page) || item.page
+    }))
 )
 
 onMounted(async () => {
   if (!api) return
   try {
-    const res = await fetch(api.replace(/\/$/, '') + '/api/views/top?limit=3')
+    // 多取一些再过滤，否则前几名里混入聚合页时会不够 DISPLAY_COUNT 条
+    const res = await fetch(api.replace(/\/$/, '') + '/api/views/top?limit=20')
     if (!res.ok) return
     const data = await res.json()
     if (Array.isArray(data.items)) items.value = data.items
