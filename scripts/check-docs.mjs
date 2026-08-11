@@ -149,6 +149,49 @@ for (const file of markdownSet) {
   }
 }
 
+/*
+ * 导航页收录完整性检查。
+ *
+ * tech-index.md 是手写的技术资源导航，它的分组和一句话介绍是编辑判断，
+ * 自动生成的标签页替代不了。但手写清单会随着新文档的加入悄悄漂移——
+ * 加过一次检查之前，已经有 4 篇文档没被收录。
+ *
+ * 这里把「漏收」从看不见的偏差变成构建失败：新增 tech-* / mcp-* 文档时，
+ * 必须同时在导航页里加一条，否则 PR 检查和部署都不会通过。
+ */
+const NAVIGATION_INDEXES = [
+  {
+    index: 'tech-index.md',
+    // 该导航页负责收录哪些文档，按文件名前缀判断
+    prefixes: ['tech-', 'mcp-']
+  }
+]
+
+for (const { index, prefixes } of NAVIGATION_INDEXES) {
+  if (!graph.has(index)) {
+    errors.push('导航页不存在：' + index)
+    continue
+  }
+
+  const listed = graph.get(index)
+  const shouldList = [...markdownSet].filter((file) => {
+    return (
+      file !== index &&
+      !file.includes('/') &&
+      prefixes.some((prefix) => file.startsWith(prefix))
+    )
+  })
+
+  for (const file of shouldList.sort()) {
+    if (!listed.has(file)) {
+      errors.push(
+        index + ' 未收录文档：' + file +
+        '（新增文档后请同步在该导航页中补一条链接）'
+      )
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error('文档检查失败：')
   for (const error of errors) console.error('- ' + error)

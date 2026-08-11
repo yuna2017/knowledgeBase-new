@@ -27,8 +27,11 @@ authors:
 
 - **[文献与科研工具指南](./tech-research-tools.md)**：Zotero 免费同步扩容、Overleaf / Typst 论文排版、找文献
 - **[MOOC 与免费学习资源](./tech-mooc.md)**：中国大学 MOOC、Coursera 助学金申请、CS 自学路线
+- **[计算机自学指南](./tech-self-learning.md)**：高校社团资源、自学路线与常用学习站点
+- **[从入学到就业的中登焚诀](./tech-Uri'sFJ.md)**：计算机科学与游戏开发方向的学习和求职路线
 - **[Git 与 GitHub 入门](./tech-git-github.md)**：版本管理基础
 - **[HTTP/HTTPS 返回码大全](./tech-http-status-codes.md)**：状态码分类速查、非标准返回码与证书报错排查
+- **[如何优雅地截屏](./tech-screenshot.md)**：各类设备的截图与录屏方法
 - **[免费与开源替代软件清单](./tech-oss-alternatives.md)**：常用付费软件的免费或开源替代品
 
 ### AI 工具、开发工具与自托管
@@ -38,6 +41,7 @@ authors:
 - **[AI 编程工具：IDE、AI IDE 与 CLI Coding Agent](./tech-coding-tools.md)**：图形界面与终端中的 AI 编程工具
 - **[Vibe Coding 使用指南](./tech-vibe-coding-guide.md)**：安装、配置和工具扩展（社区工具部分使用前需复核）
 - **[AI Skill 与 MCP 基础](./tech-skills-mcp.md)**：Skill、MCP 及两者关系的基础说明
+- **[MCP 与 Skills 推荐](./mcp-recommendation.md)**：按用途分类的 MCP Server 与 Skills 清单（转载内容，注意时效）
 - **[CC Switch 简介](./tech-cc-switch.md)**：Claude Code / Codex 多供应商配置切换工具
 - **[API 中转站简介](./tech-relay.md)**：什么是中转站，以及使用时的注意事项
 - **[自托管入门](./tech-self-hosting.md)**：内网穿透与私人服务部署，仍需补充校园网实测
