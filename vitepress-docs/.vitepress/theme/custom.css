@@ -6,26 +6,9 @@
   display: none;
 }
 
-.article-freshness {
-  margin-bottom: 18px;
-}
-
-.article-freshness__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  color: var(--vp-c-text-2);
-  font-size: 13px;
-}
-
-.article-freshness__time {
-  color: var(--vp-c-text-1);
-  font-weight: 500;
-}
-
+/* 只剩超过半年未校准的告警，不再有包裹容器，自己带下边距 */
 .article-freshness__warning {
-  margin: 10px 0 0;
+  margin: 0 0 18px;
   padding: 10px 12px;
   border: 1px solid var(--vp-c-warning-3);
   border-radius: 8px;
@@ -113,18 +96,6 @@
   margin: 20px 0 32px;
 }
 
-/* /tags 页的标签云按文档数分四档，字号体现主次；文章页的 chip 不受影响 */
-.tag-cloud .tag-chip--level-1 { font-size: 13px; }
-.tag-cloud .tag-chip--level-2 { font-size: 15px; }
-.tag-cloud .tag-chip--level-3 { font-size: 17px; }
-
-.tag-cloud .tag-chip--level-4 {
-  font-size: 19px;
-  font-weight: 600;
-  border-color: var(--vp-c-brand-soft);
-  color: var(--vp-c-brand-1);
-}
-
 .tag-chip__count {
   color: var(--vp-c-text-3);
   font-size: 12px;
@@ -133,6 +104,114 @@
 .tag-page-meta {
   color: var(--vp-c-text-2);
   font-size: 14px;
+}
+
+/* ---- 标签总览页 ---- */
+
+.tags-head {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.tags-head h1 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tags-head__meta {
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+}
+
+.tags-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 24px 0 0;
+}
+
+.tags-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  text-decoration: none !important;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.tags-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  transform: translateY(-1px);
+}
+
+.tags-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tags-card__name {
+  color: var(--vp-c-text-1);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tags-card:hover .tags-card__name {
+  color: var(--vp-c-brand-1);
+}
+
+.tags-card__count {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--vp-c-default-soft);
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+}
+
+/* 预览标题让读者不点进去也能判断这个标签下大概是什么内容 */
+.tags-card__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.tags-card__doc {
+  overflow: hidden;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tags-card__more {
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+}
+
+.tags-minor {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.tags-minor__title {
+  margin: 0 0 12px !important;
+  padding: 0 !important;
+  border: none !important;
+  font-size: 15px !important;
+  color: var(--vp-c-text-2);
+}
+
+.tags-minor .tag-cloud {
+  margin: 0;
 }
 
 /* ---- 标签页 ---- */
