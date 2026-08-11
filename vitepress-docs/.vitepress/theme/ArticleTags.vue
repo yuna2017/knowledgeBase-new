@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useData, withBase } from 'vitepress'
-import { tagId } from './tag-utils'
+import { tagPath } from './tag-utils'
 
 const { frontmatter } = useData()
 
@@ -11,8 +11,9 @@ const tags = computed(() => {
   return [...new Set(list.map((tag) => String(tag).trim()).filter(Boolean))]
 })
 
+// 直接进该标签自己的页面，不再是跳到 /tags 页内的锚点
 function tagHref(tag: string) {
-  return withBase('/tags') + '#' + tagId(tag)
+  return withBase(tagPath(tag))
 }
 </script>
 

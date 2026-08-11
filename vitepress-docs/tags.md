@@ -1,56 +1,60 @@
 ---
 title: 标签
+description: 按主题浏览 YUNA 知识库的全部文档，标签字号反映归入的文档数量。
+# 聚合页不属于文章序列，不显示上一篇/下一篇
+prev: false
+next: false
 ---
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { withBase } from 'vitepress'
 import { data as pages } from './tags.data'
-import { tagId } from './.vitepress/theme/tag-utils'
+import { tagPath } from './.vitepress/theme/tag-utils'
 
-const groups = computed(() => {
-  const grouped = new Map()
+/**
+ * 按文档数从多到少排列，并按数量分四档控制字号。
+ * 旧版把几十个标签平铺成等权重的一片、再在同一页堆下全部文档列表，
+ * 既看不出主次也很难扫读；现在这里只做入口，文档列表放在各标签自己的页面。
+ */
+const cloud = computed(() => {
+  const counts = new Map<string, number>()
 
   for (const page of pages) {
     for (const tag of page.tags) {
-      if (!grouped.has(tag)) grouped.set(tag, [])
-      grouped.get(tag).push(page)
+      counts.set(tag, (counts.get(tag) ?? 0) + 1)
     }
   }
 
-  return [...grouped.entries()]
-    .map(([tag, taggedPages]) => ({ tag, pages: taggedPages }))
-    .sort((left, right) => left.tag.localeCompare(right.tag, 'zh-CN'))
+  const entries = [...counts.entries()]
+  const max = Math.max(1, ...entries.map(([, count]) => count))
+
+  return entries
+    .sort(
+      ([leftTag, leftCount], [rightTag, rightCount]) =>
+        rightCount - leftCount || leftTag.localeCompare(rightTag, 'zh-CN')
+    )
+    .map(([tag, count]) => ({
+      tag,
+      count,
+      level: Math.min(4, Math.ceil((count / max) * 4))
+    }))
 })
 </script>
 
 # 标签
 
-点击标签可查看归入该标签的全部文档。一篇文章可以同时属于多个标签。
+共 {{ cloud.length }} 个标签。字号越大表示归入的文档越多，点击进入该标签的文档列表。
 
 <nav class="tag-cloud" aria-label="全部标签">
   <a
-    v-for="group in groups"
-    :key="group.tag"
+    v-for="item in cloud"
+    :key="item.tag"
     class="tag-chip"
-    :href="'#' + tagId(group.tag)"
+    :class="'tag-chip--level-' + item.level"
+    :href="withBase(tagPath(item.tag))"
   >
-    <span>{{ group.tag }}</span>
-    <span class="tag-chip__count">{{ group.pages.length }}</span>
+    <span>{{ item.tag }}</span>
+    <span class="tag-chip__count">{{ item.count }}</span>
   </a>
 </nav>
-
-<section
-  v-for="group in groups"
-  :id="tagId(group.tag)"
-  :key="group.tag"
-  class="tag-section"
->
-  <h2>{{ group.tag }}</h2>
-  <ul class="tag-document-list">
-    <li v-for="page in group.pages" :key="page.url">
-      <a :href="withBase(page.url)">{{ page.title }}</a>
-    </li>
-  </ul>
-</section>
-

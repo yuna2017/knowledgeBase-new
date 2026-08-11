@@ -18,6 +18,9 @@ function walkMarkdown(directory) {
     if (entry.isDirectory()) {
       files.push(...walkMarkdown(fullPath))
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      // 跳过 VitePress 动态路由模板（如 tags/[tag].md）：
+      // 它不是一个真实页面，实际路由由同名的 .paths.ts 在构建时生成
+      if (entry.name.includes('[')) continue
       files.push(fullPath)
     }
   }
