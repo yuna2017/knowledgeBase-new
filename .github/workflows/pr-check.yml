@@ -21,6 +21,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # 与 deploy.yml 保持一致：lastUpdated、页面历史、标签页和「最近更新」
+          # 都依赖每个文件的完整提交历史，浅克隆会让这些数据全部为空，
+          # PR 检查就验证不了生产实际会构建出的内容
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
