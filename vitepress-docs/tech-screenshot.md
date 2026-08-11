@@ -5,7 +5,6 @@ tags:
 authors:
   - Benincasamatch
 ---
----
 
 # 如何优雅地截屏（告别拍屏）
 
