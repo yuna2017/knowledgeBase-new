@@ -6,6 +6,7 @@ import {
 } from '@nolebase/vitepress-plugin-git-changelog/vite'
 import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-inline-link-preview/markdown-it'
 import { defineConfig } from 'vitepress'
+import { ORGANIZATION, QQ_GROUP } from './shared/contact'
 import { extractDescription } from './shared/markdown'
 
 /** 站点正式域名，改域名时只改这一处。用于 canonical、og:url 和 sitemap。 */
@@ -264,8 +265,13 @@ export default defineConfig({
       }
     },
     footer: {
-      message: 'MIT Licensed',
-      copyright: 'Copyright © 2017-2026 燕山大学大学生网络信息协会'
+      // 页脚在每一页都会显示，招新信息放这里既全站可见又不打断正文。
+      // 群号本身做成链接：点得动，链接失效时数字也还在，可以手动搜索加群。
+      message: [
+        `加入我们：QQ 群 <a href="${QQ_GROUP.joinUrl}" target="_blank" rel="noreferrer">${QQ_GROUP.number}</a>`,
+        '<a href="https://opensource.org/licenses/MIT" target="_blank" rel="noreferrer">MIT Licensed</a>'
+      ].join(' · '),
+      copyright: `Copyright © 2017-2026 ${ORGANIZATION}`
     }
   }
 })

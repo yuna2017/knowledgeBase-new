@@ -106,6 +106,39 @@
   font-size: 14px;
 }
 
+/*
+ * VitePress 默认主题在有侧边栏的页面上把页脚整个隐藏了
+ * （.VPFooter.has-sidebar { display: none }），也就是除首页外的全部页面。
+ * 页脚承载着招新信息和许可证声明，需要全站可见，所以覆盖掉。
+ *
+ * 必须带 #app 前缀：默认主题那条规则是 Vue 的 scoped 样式，
+ * 实际选择器是 .VPFooter.has-sidebar[data-v-xxx]，特异性 (0,3,0)，
+ * 比不带前缀的 .VPFooter.has-sidebar (0,2,0) 高——写在后面也覆盖不掉。
+ * 加上 id 后是 (1,3,0)，稳定生效。
+ *
+ * 页脚是 VPContent 的兄弟节点，侧边栏是固定定位的，
+ * 不补偏移会被压在侧边栏底下——下面的 padding 照搬 VitePress
+ * 给 .VPContent.has-sidebar 的那套，保证两者左边缘对齐。
+ */
+#app .VPFooter.has-sidebar {
+  display: block;
+}
+
+@media (min-width: 960px) {
+  #app .VPFooter.has-sidebar {
+    padding-left: calc(var(--vp-sidebar-width) + 32px);
+  }
+}
+
+@media (min-width: 1440px) {
+  #app .VPFooter.has-sidebar {
+    padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    padding-left: calc(
+      (100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width) + 32px
+    );
+  }
+}
+
 /* ---- 标签总览页 ---- */
 
 .tags-head {
