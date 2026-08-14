@@ -1,4 +1,5 @@
 ---
+description: 校园邮箱可用于校内通知、期刊投稿和学生身份验证。本文说明在一网通办中申请邮箱、登录 stumail.ysu.edu.cn 的步骤，并列出 Microsoft 365 教育版、GitHub 和 JetBrains 等教育计划的资格验证入口。
 tags:
   - 校园邮箱
   - 学生权益

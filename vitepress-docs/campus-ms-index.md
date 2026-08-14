@@ -1,4 +1,5 @@
 ---
+description: 燕山大学正版软件管理与服务平台（software.ysu.edu.cn）面向师生提供 Windows、Office、Visio、WPS、福昕 PDF 编辑器、中望 CAD、MWORKS 等软件。本文说明平台入口，以及常用软件的下载和安装指引在哪里查看。
 tags:
   - 正版化
   - 校园服务

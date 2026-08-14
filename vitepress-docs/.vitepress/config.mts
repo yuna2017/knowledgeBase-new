@@ -7,7 +7,7 @@ import {
 import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-inline-link-preview/markdown-it'
 import { defineConfig } from 'vitepress'
 import { ORGANIZATION, QQ_GROUP } from './shared/contact'
-import { extractDescription } from './shared/markdown'
+import { extractDescription, truncate } from './shared/markdown'
 
 /** 站点正式域名，改域名时只改这一处。用于 canonical、og:url 和 sitemap。 */
 const SITE_URL = 'https://docs.yuna.team'
@@ -41,6 +41,94 @@ function pageUrl(relativePath: string): string {
   else if (path.endsWith('/index')) path = path.slice(0, -'index'.length)
   return SITE_URL + '/' + path
 }
+
+/**
+ * 搜索结果里描述的可用长度。
+ *
+ * 按中文算，不是照搬英文站常说的 150-160：中文一个字占的宽度约是拉丁字母的
+ * 两倍，搜索结果里 80-90 个汉字就把摘要那一行铺满了。所以下限取 80——
+ * 低于这个数说不清整页在讲什么，Bing Webmaster Tools 会报「描述过短」；
+ * 上限取 130，再长的部分在结果页上本来也看不到。
+ */
+const DESCRIPTION_MIN = 80
+const DESCRIPTION_MAX = 130
+
+/**
+ * 标签页的 <meta description>。
+ *
+ * 早先只写「归入「X」标签的 N 篇文档。」，四十多个标签页除了标签名和数字之外
+ * 一模一样，字数也只有十几个——Bing 会同时判成「描述过短」和「描述重复」。
+ * 这里把该标签下的文档标题列进去：每页内容天然不同，长度也够，
+ * 而且搜索结果里能直接看到这个标签下有什么。
+ */
+function tagDescription(tagName: string, count: number, docs: unknown): string {
+  const list = Array.isArray(docs) ? docs : []
+  const titles = list.map((doc) => String(doc?.title ?? '').trim()).filter(Boolean)
+
+  const head = `YUNA 知识库中归入「${tagName}」标签的 ${count} 篇文档`
+  if (titles.length === 0) return head + '。'
+
+  // 列到放不下为止，剩下的用「等 N 篇」收尾，避免中途被截断成半个标题
+  const listed: string[] = []
+  for (const title of titles) {
+    const next = [...listed, title].join('、')
+    if (head.length + 1 + next.length + 1 > DESCRIPTION_MAX) break
+    listed.push(title)
+  }
+  if (listed.length === 0) return head + '。'
+
+  const rest = titles.length - listed.length
+  const text = head + '：' + listed.join('、') +
+    (rest > 0 ? ` 等 ${titles.length} 篇。` : '。')
+
+  /*
+   * 标签下只有一两篇时，光列标题凑不满长度。这里补上首篇自己的摘要：
+   * 它逐个标签都不同，不会像一句固定的收尾语那样，让四十多个标签页
+   * 从「模板重复」换成另一种形式的重复。
+   */
+  if (text.length >= DESCRIPTION_MIN) return text
+  const lead = String(list[0]?.description ?? '').trim()
+  return lead ? text + truncate(lead, DESCRIPTION_MAX - text.length) : text
+}
+
+/**
+ * 复刻 VitePress 内部拼 <title> 的规则，用于 og:title 和 twitter:title。
+ *
+ * 分享卡片的标题必须和浏览器标签页显示的完全一致，所以不能自己简写成
+ * 「标题 | 站点名」：VitePress 还要处理 titleTemplate 为字符串、为 false，
+ * 以及页面标题恰好等于站点名（此时不再拼后缀）这几种情况——首页和仓库说明
+ * 页之前的标题重复，正是最后那条规则造成的。
+ */
+function renderedTitle(
+  siteTitle: string,
+  title: string,
+  template: string | boolean | undefined
+): string {
+  if (typeof template === 'string' && template.includes(':title')) {
+    return template.replace(/:title/g, title)
+  }
+
+  const suffix =
+    template === false
+      ? ''
+      : template === true || template === undefined
+        ? ' | ' + siteTitle
+        : siteTitle === template
+          ? ''
+          : ' | ' + template
+
+  // 标题本身就是后缀那部分时，VitePress 不会再拼一遍
+  return title === suffix.slice(3) ? title : title + suffix
+}
+
+/**
+ * 构建过程中收集描述长度不合规的页面，在 buildEnd 里一次性报出来。
+ *
+ * 放在这里而不是 scripts/check-docs.mjs：只有 transformPageData 拿得到每页
+ * 最终真正写进 HTML 的描述，包括动态生成的标签页；在外部脚本里重算一遍
+ * 取值规则，迟早会和这里对不上。
+ */
+const descriptionIssues = new Map<string, string>()
 
 export default defineConfig({
   title: 'YUNA KnowledgeBase',
@@ -130,31 +218,60 @@ export default defineConfig({
      * 标签页的 <h1> 写的是 {{ $params.name }}，而 VitePress 在解析阶段就把
      * 标题抓走了——那时候 Vue 还没渲染，抓到的是模板字面量。
      * 这里用路由参数覆盖掉，浏览器标签页、分享卡片和站内搜索才拿得到真实标签名。
+     *
+     * 加「标签：」前缀是因为有的标签和文章同名（「校园邮箱」「一网通办」），
+     * 不加的话聚合页和文章页的 <title> 一模一样，搜索引擎和站内搜索都分不出
+     * 哪个是文章、哪个是标签入口。页面上的 <h1> 不受影响，仍然只显示标签名。
      */
     const tagName = typeof pageData.params?.name === 'string'
       ? pageData.params.name
       : ''
     if (tagName) {
-      pageData.title = tagName
-      pageData.frontmatter.title = tagName
+      pageData.title = '标签：' + tagName
+      pageData.frontmatter.title = pageData.title
     }
 
-    // 与 VitePress 实际渲染的 <title> 保持一致，避免分享卡片和标签页标题对不上
-    const pageTitle = pageData.frontmatter.title || pageData.title || ''
-    const fullTitle = isHome || !pageTitle
-      ? siteConfig.site.title
-      : pageTitle + ' | ' + siteConfig.site.title
+    const pageTitle =
+      pageData.frontmatter.title || pageData.title || siteConfig.site.title
+    const fullTitle = renderedTitle(
+      siteConfig.site.title,
+      pageTitle,
+      pageData.frontmatter.titleTemplate
+    )
 
     const description =
       pageData.frontmatter.description ||
       (tagName
-        ? `归入「${tagName}」标签的 ${pageData.params?.count ?? 0} 篇文档。`
+        ? tagDescription(
+            tagName,
+            Number(pageData.params?.count ?? 0),
+            pageData.params?.docs
+          )
         : '') ||
-      (isHome ? '' : extractDescription(siteConfig.srcDir, pageData.relativePath)) ||
+      (isHome
+        ? ''
+        : extractDescription(
+            siteConfig.srcDir,
+            pageData.relativePath,
+            // 自动摘要按同一个上限截断，否则正文首段一长就直接顶穿检查
+            DESCRIPTION_MAX
+          )) ||
       siteConfig.site.description
 
     // 同时驱动 <meta name="description">
     pageData.description = description
+
+    if (description.length < DESCRIPTION_MIN) {
+      descriptionIssues.set(
+        pageData.relativePath,
+        '描述只有 ' + description.length + ' 个字符：' + description
+      )
+    } else if (description.length > DESCRIPTION_MAX) {
+      descriptionIssues.set(
+        pageData.relativePath,
+        '描述有 ' + description.length + ' 个字符，搜索结果里会被截断'
+      )
+    }
 
     const head = (pageData.frontmatter.head ??= [])
     head.push(
@@ -165,6 +282,28 @@ export default defineConfig({
       ['meta', { property: 'og:description', content: description }],
       ['meta', { name: 'twitter:title', content: fullTitle }],
       ['meta', { name: 'twitter:description', content: description }]
+    )
+  },
+
+  /*
+   * 描述长度不合规就让构建失败。
+   *
+   * 部署和 PR 检查跑的都是 npm run build，所以这一条同时挡住这两条路径：
+   * 新加的文档如果首段不适合当摘要，必须补 frontmatter 的 description，
+   * 而不是等下一次 Bing 报告出来才发现。
+   */
+  buildEnd() {
+    if (descriptionIssues.size === 0) return
+
+    const lines = [...descriptionIssues]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([path, reason]) => '- ' + path + '：' + reason)
+
+    throw new Error(
+      '有 ' + descriptionIssues.size + ' 个页面的 meta description 长度不合规' +
+      '（应为 ' + DESCRIPTION_MIN + '-' + DESCRIPTION_MAX + ' 字符）：\n' +
+      lines.join('\n') +
+      '\n在页面 frontmatter 里写一行 description 即可覆盖自动摘要。'
     )
   },
 

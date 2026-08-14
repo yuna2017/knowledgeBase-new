@@ -1,4 +1,5 @@
 ---
+description: 用云主机、宿舍闲置电脑或旧手机自己跑服务需要准备什么，校园网没有公网 IP 时怎样用 Cloudflare Tunnel、Tailscale 或自建 frp 做内网穿透，以及适合先上手的几类服务。
 tags:
   - 自托管
   - 云服务

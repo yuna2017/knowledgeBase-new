@@ -1,4 +1,5 @@
 ---
+description: 学生怎样低成本拥有一个自己的域名：GitHub 学生包提供的域名权益、Cloudflare Registrar 的成本价续费，域名可以用来做个人主页、自定义收件地址和自托管服务入口，以及续费、WHOIS 隐私和 ICP 备案的避坑提醒。
 tags:
   - 域名
   - 学生权益

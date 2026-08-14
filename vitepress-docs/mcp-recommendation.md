@@ -1,4 +1,5 @@
 ---
+description: 转载自 LinuxDO 论坛的 MCP 与 Skills 推荐清单，按用途分为思考推理增强、开发编程辅助、浏览器自动化、工程平台与 DevOps、知识记忆、审美去 AI 味、学术科研，以及安全与防注入检测八类。
 tags:
   - MCP
   - Skills

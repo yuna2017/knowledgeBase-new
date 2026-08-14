@@ -36,3 +36,14 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ secrets.CLOUDFLARE_PROJECT_NAME }}
           directory: vitepress-docs/.vitepress/dist  # 构建输出目录
+
+      # 通知 Bing / Yandex 等搜索引擎重新抓取本次变更的页面。
+      # 必须放在发布之后：IndexNow 收到通知就会来抓，新内容得先上线。
+      # continue-on-error：站点这时已经发布成功，通知失败不该把部署标成红色。
+      - name: Notify IndexNow
+        continue-on-error: true
+        run: node scripts/indexnow.mjs
+        env:
+          # 手动触发时 github.event.before 为空，脚本会退回全量提交
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}

@@ -1,4 +1,5 @@
 ---
+description: 学生包、Pages 建站和开源软件这些内容都默认你有 GitHub 账号、会基本的 Git 操作。本文只讲最常用的部分：Git 的安装与初始配置、第一次提交、把本地仓库连到 GitHub，以及之后往哪个方向继续学。
 tags:
   - Git
   - GitHub

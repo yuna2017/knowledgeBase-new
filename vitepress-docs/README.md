@@ -1,3 +1,11 @@
+---
+# 一级标题和站点名同为「YUNA KnowledgeBase」，VitePress 遇到这种情况不会再拼
+# 「 | 站点名」后缀，于是本页和首页的 <title> 完全一样，且只有 18 个字符。
+# 这里单独给页面标题，与顶部导航里的「仓库说明」对应。
+title: 仓库说明与维护指引
+description: YUNA KnowledgeBase 由燕山大学学生网络信息协会维护，内容按 tags 组织。本页说明知识库的定位、内容时效性约定、参与维护的方式，以及基于 VitePress 的本地运行与构建步骤。
+---
+
 # YUNA KnowledgeBase
 
 YUNA KnowledgeBase 是面向燕山大学师生的在线生活指南，由燕山大学学生网络信息协会维护。内容以解决实际问题为主，包括校园服务、学习资源、学生权益和常用技术工具。

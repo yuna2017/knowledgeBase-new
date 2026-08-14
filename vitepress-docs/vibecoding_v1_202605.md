@@ -1,4 +1,5 @@
 ---
+description: 面向不会写代码的人的 AI 编程实战教程：环境准备与工具安装、AI 编程基础理论、工具生态与模型选择、Claude Code 进阶技巧、Skills 技能系统实践，以及完整项目案例与独立实战。
 tags:
   - Vibe Coding
   - AI工具

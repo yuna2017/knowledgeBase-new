@@ -1,6 +1,12 @@
 ---
 layout: home
 
+# 首页的 <title> 默认只有站点名「YUNA KnowledgeBase」——18 个字符，
+# 搜索引擎会判为标题过短，也说不出这个站是做什么的。
+# titleTemplate 给它补一个后缀，渲染成「YUNA KnowledgeBase | 燕山大学师生在线生活指南」。
+titleTemplate: 燕山大学师生在线生活指南
+description: YUNA KnowledgeBase 是燕山大学学生网络信息协会维护的在线生活指南，覆盖校园网认证、一网通办、正版软件、校园邮箱，以及学生权益、免费额度、科研工具和 AI 编程等技术资源。
+
 hero:
   name: "YUNA KnowledgeBase"
   text: "面向问题的燕大师生在线生活指南"
