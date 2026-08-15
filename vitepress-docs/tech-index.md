@@ -46,3 +46,4 @@ authors:
 - **[CC Switch 简介](./tech-cc-switch.md)**：Claude Code / Codex 多供应商配置切换工具
 - **[API 中转站简介](./tech-relay.md)**：什么是中转站，以及使用时的注意事项
 - **[自托管入门](./tech-self-hosting.md)**：内网穿透与私人服务部署，仍需补充校园网实测
+- **[如何搭建你自己的 Minecraft 服务器（序言）](.\tech-build-your-own-minecraft-server-0.md)**：介绍境内NAT后的网络环境，以及如何进行内网穿透，搭建虚拟局域网，获取公网 IP
