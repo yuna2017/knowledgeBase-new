@@ -29,5 +29,9 @@ export const authorProfiles: Record<string, AuthorProfile> = {
   Benincasamatch: {
     displayName: '冬瓜Benny',
     github: 'Benincasamatch'
+  },
+  Creg_Chain: {
+    displayName: 'Creg_Chain',
+    github: 'CregChain'
   }
 }
