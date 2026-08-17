@@ -9,8 +9,9 @@
  * 存储：D1，counters(page TEXT PRIMARY KEY, views INTEGER)
  */
 
-// page key 校验：站内路径，以 / 开头，长度受限，禁止控制字符和协议前缀
-const PAGE_RE = /^\/[\w\-./%]*$/;
+// page key 校验：站内路径，以 / 开头，长度受限，禁止控制字符和协议前缀。
+// 允许单引号：站点路径可能含它（如 /tech-Uri'sFJ），不允许会让这类页面无法计数。
+const PAGE_RE = /^\/[\w\-./%']*$/;
 const PAGE_MAX = 256;
 
 function parseOrigins(env) {
