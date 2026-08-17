@@ -5,7 +5,7 @@
  * 排除规则与站点 page-kind.ts 保持一致：
  * 首页、聚合页（/tags、/recent）、维护文档（/README、/CONTRIBUTING、/CONTEXT）不计入。
  *
- * 每篇附带仓库里最后一次提交时间（date），排行页面用于展示修订时间。
+ * 每篇附带首次进入仓库的时间（date，即上传时间），排行页面用于展示。
  *
  * 自动更新：CI 在每次推送到 main 时自动运行本脚本并重新部署 Worker，
  * 平时无需手动执行；本地预览时可直接运行：node gen-titles.mjs
@@ -71,14 +71,17 @@ function titleOf(file, rel) {
   return FALLBACK_TITLES[base] || base
 }
 
-/** 文件在仓库里的最后一次提交时间（ISO）；git 不可用时返回空串 */
-function lastCommitDate(file) {
+/** 文件首次进入仓库的时间（ISO，即上传时间）；git 不可用时返回空串 */
+function firstCommitDate(file) {
   try {
-    return execFileSync(
+    // --follow 跨重命名追溯；--reverse 使输出从旧到新，取第一行即最早提交。
+    // 注意不能用 -1：数量限制在 --reverse 重排之前生效，会取到最新一条。
+    const output = execFileSync(
       'git',
-      ['log', '-1', '--format=%cI', '--', file],
+      ['log', '--follow', '--reverse', '--format=%cI', '--', file],
       { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
-    ).trim()
+    )
+    return output.trim().split(/\r?\n/)[0] || ''
   } catch {
     return ''
   }
@@ -88,7 +91,7 @@ const pages = walkMarkdown(docsRoot)
   .map((file) => {
     const rel = relative(docsRoot, file)
     const page = pageUrlOf(rel)
-    return { page, title: titleOf(file, rel), url: SITE_URL + page, date: lastCommitDate(relative(repoRoot, file)) }
+    return { page, title: titleOf(file, rel), url: SITE_URL + page, date: firstCommitDate(relative(repoRoot, file)) }
   })
   .filter((item) => isRankable(item.page))
   .sort((a, b) => a.page.localeCompare(b.page))

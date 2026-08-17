@@ -33,6 +33,7 @@ export const RANKING_PAGE_HTML = `<!doctype html>
   .stat .label { color: var(--muted); font-size: .7rem; }
   .stat .value { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .charts { display: grid; grid-template-columns: 430px 1fr; gap: 8px; margin-bottom: 10px; }
+  .daily-card { margin-bottom: 10px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
   .card h2 { margin: 0 0 8px; font-size: .8rem; color: var(--muted); font-weight: 600; }
   .pie-wrap { position: relative; width: 210px; height: 210px; margin: 0 auto 8px; }
@@ -114,6 +115,11 @@ export const RANKING_PAGE_HTML = `<!doctype html>
       <h2>Top 8 柱状图</h2>
       <div class="bars" id="bars"><div class="empty">加载中…</div></div>
     </div>
+  </div>
+
+  <div class="card daily-card">
+    <h2>每日新增阅读量（UTC+8 · 近 14 天）</h2>
+    <div class="bars" id="daily-bars"><div class="empty">加载中…</div></div>
   </div>
 
   <div class="controls">
@@ -247,7 +253,7 @@ function renderList(data) {
     title.className = 'title'; title.href = item.url; title.target = '_blank'; title.textContent = item.title
     const path = document.createElement('div')
     path.className = 'path'
-    path.textContent = item.page + (item.date ? ' · 修订 ' + item.date.slice(0, 10) : '')
+    path.textContent = item.page + (item.date ? ' · 上传 ' + item.date.slice(0, 10) : '')
     const track = document.createElement('div')
     track.className = 'bar-track'
     const fill = document.createElement('div')
@@ -270,6 +276,31 @@ function renderList(data) {
   }))
 }
 
+function renderDaily(daily) {
+  const box = document.getElementById('daily-bars')
+  box.replaceChildren()
+  if (!Array.isArray(daily) || daily.length === 0) {
+    box.innerHTML = '<div class="empty">暂无数据</div>'
+    return
+  }
+  const max = Math.max(...daily.map((entry) => entry.views), 1)
+  for (const entry of daily) {
+    const col = document.createElement('div')
+    col.className = 'bar-col'
+    const val = document.createElement('div'); val.className = 'val'
+    val.textContent = entry.views.toLocaleString('zh-CN'); val.title = entry.day
+    const area = document.createElement('div'); area.className = 'bar-area'
+    const bar = document.createElement('div'); bar.className = 'bar'
+    bar.style.height = Math.max(Math.round((entry.views / max) * 100), entry.views > 0 ? 2 : 0) + '%'
+    area.appendChild(bar)
+    const name = document.createElement('div'); name.className = 'name'
+    name.textContent = entry.day.slice(5) // MM-DD
+    name.title = entry.day
+    col.append(val, area, name)
+    box.appendChild(col)
+  }
+}
+
 function render(data) {
   const total = data.items.reduce((sum, item) => sum + item.views, 0)
   const max = Math.max(...data.items.map((item) => item.views), 0)
@@ -279,6 +310,7 @@ function render(data) {
   document.getElementById('stat-avg').textContent = Math.round(total / Math.max(data.items.length, 1)).toLocaleString('zh-CN')
   renderPie(data.items, total)
   renderBars(data.items)
+  renderDaily(data.daily)
   renderList(data)
 }
 
