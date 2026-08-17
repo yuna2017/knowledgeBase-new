@@ -7,7 +7,7 @@ import ArticleTags from './ArticleTags.vue'
 import FrontmatterAuthors from './FrontmatterAuthors.vue'
 import ArticleViews from './ArticleViews.vue'
 import TopViews from './TopViews.vue'
-import { isAggregatePage } from './page-kind'
+import { isAggregatePage, isRankableArticle } from './page-kind'
 
 const { Layout } = DefaultTheme
 const { page } = useData()
@@ -18,6 +18,12 @@ const { page } = useData()
  * （而且标签子页是动态路由生成的，计数会把入口流量混进文章数据里）。
  */
 const isAggregate = computed(() => isAggregatePage(page.value.relativePath))
+
+/**
+ * 只有可进入排行的知识库文章才接入阅读计数：
+ * 首页、聚合页和项目维护文档（仓库说明 / 贡献指南 / 内容规范）都不计数。
+ */
+const isCountable = computed(() => isRankableArticle(page.value.relativePath))
 </script>
 
 <template>
@@ -27,8 +33,8 @@ const isAggregate = computed(() => isAggregatePage(page.value.relativePath))
         <ArticleFreshness />
         <ArticleTags />
         <FrontmatterAuthors />
-        <ArticleViews />
       </template>
+      <ArticleViews v-if="isCountable" />
     </template>
     <template #home-features-after>
       <TopViews />
