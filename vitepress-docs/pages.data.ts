@@ -10,7 +10,9 @@ export default createContentLoader('*.md', {
   includeSrc: true,
   transform(pages): PageMeta[] {
     return pages.map((page) => {
-      const heading = page.src?.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim()
+      // 先剥掉 frontmatter 再找一级标题，避免把 frontmatter 里以 # 开头的注释当标题
+      const body = page.src?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+      const heading = body?.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim()
       return {
         title: String(page.frontmatter.title || heading || page.url),
         url: page.url
