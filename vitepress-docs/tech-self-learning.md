@@ -17,7 +17,7 @@ authors:
 ### 清华大学
 - [清华大学计算机系科协2026暑培](https://summer26.net9.org/)
 ### 北京大学
-- [Missing Semester (LCPU)](https://missing.lcpu.dev/)
+- [Missing Semester (LCPU)](https://missing.lcpu.dev/)（MIT 官方中文版：[missing-semester-cn](https://missing-semester-cn.github.io/)）
 ### 中科大
 - [Linux101](https://101.lug.ustc.edu.cn/Ch01/)
 - [Linux201](https://201.lug.ustc.edu.cn/)

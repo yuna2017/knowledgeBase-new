@@ -17,7 +17,7 @@
 - 图片放在 `vitepress-docs/images/` 下，并用相对路径引用
 - frontmatter 里保留 1 到 3 个 `tags`
 - `description` 不写时自动取正文第一段。长度必须在 80 到 130 字之间，构建时会检查，不合格直接失败
-- 首段是免责声明、转载说明，或以冒号结尾只有半句话时，自动摘要不适合当搜索结果，这类页面必须手写 `description`
+- 首段是免责声明、转载说明，或以冒号结尾只有半句话时，必须手写 `description`
 - 新增 `tech-*` / `mcp-*` 文档后，要在 `tech-index.md` 里补一条链接，漏收同样会让检查失败
 
 ## 站内链接
@@ -30,9 +30,9 @@
 
 ## 标签
 
-每个标签都有自己的页面，地址是 `/tags/<标签名>`（名字里的空格换成连字符，例如
+每个标签都有自己的页面（`/tags/<标签名>`，空格换成连字符，例如
 `Vibe Coding` → `/tags/Vibe-Coding`）。新增标签前先在[标签页](https://docs.yuna.team/tags)
-看一眼有没有近义的，优先复用已有标签。
+看有没有近义的，优先复用已有标签。
 
 ## 作者
 
@@ -53,12 +53,12 @@ authors:
 ```ts
 '文章 frontmatter 里填的名称': {
   displayName: '站点中显示的名称',
-  github: 'your-github-id' // 用于生成 GitHub 主页链接和头像
+  github: 'your-github-id'
 },
 ```
 
 `authors` 的值必须与 `authorProfiles` 的键完全一致，未登记会让 PR 检查和构建失败。
-不填 `authors` 时，作者默认显示为“燕山大学大学生网络信息协会”。
+不填 `authors` 时，默认显示为“燕山大学大学生网络信息协会”。
 
 ## 提交前
 
@@ -71,4 +71,4 @@ bun / pnpm / yarn 用户对应为 `bun run dev` / `pnpm dev` / `yarn dev`。
 
 ## 这些不用手写
 
-- 每篇文章底部的「页面历史」和全站[最近更新](https://docs.yuna.team/recent)都由 git 提交记录生成。CI 里 `actions/checkout` 必须保持 `fetch-depth: 0`，浅克隆会让所有页面显示同一个时间
+- 每篇文章底部的「页面历史」和全站[最近更新](https://docs.yuna.team/recent)由 git 提交记录自动生成，无需手写。CI 里 `actions/checkout` 必须保持 `fetch-depth: 0`，否则所有页面显示同一个时间

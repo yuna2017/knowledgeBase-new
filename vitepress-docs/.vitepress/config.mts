@@ -372,6 +372,7 @@ export default defineConfig({
           { text: 'Vibe Coding 入门', link: '/tech-vibecoding' },
           { text: 'AI 编程工具', link: '/tech-coding-tools' },
           { text: 'Vibe Coding 使用指南', link: '/tech-vibe-coding-guide' },
+          { text: 'Vibe Coding 实战教程（长篇）', link: '/vibecoding_v1_202605' },
           { text: 'AI Skill 与 MCP 基础', link: '/tech-skills-mcp' },
           { text: 'MCP 与 Skills 推荐', link: '/mcp-recommendation' },
           { text: 'CC Switch 简介', link: '/tech-cc-switch' },

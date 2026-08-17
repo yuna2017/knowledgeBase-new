@@ -12,7 +12,7 @@ authors:
 
 本页按 tags 汇总学生权益、免费额度、学习科研工具和 AI 辅助编程内容。重点是能直接照着做的入口、限制和注意事项。
 
-> 海外服务可能不支持中国大陆地区，访问、注册和支付也可能不稳定。中转站和配置切换工具只能改变接入方式，不代表符合服务条款，也不能消除隐私、资金和数据跨境风险。
+> 海外服务可能不支持中国大陆地区，访问、注册和支付也可能不稳定。中转站和配置切换工具只能改变接入方式，不代表符合服务条款，也不能消除隐私、资金和数据跨境风险（详见 [API 中转站简介](./tech-relay.md)）。
 
 ## 按标签浏览
 
@@ -41,6 +41,7 @@ authors:
 - **[Vibe Coding 入门：从对话式原型开始](./tech-vibecoding.md)**：用 Kimi 生成简单网页的示例与能力边界
 - **[AI 编程工具：IDE、AI IDE 与 CLI Coding Agent](./tech-coding-tools.md)**：图形界面与终端中的 AI 编程工具
 - **[Vibe Coding 使用指南](./tech-vibe-coding-guide.md)**：安装、配置和工具扩展（社区工具部分使用前需复核）
+- **[Vibe Coding 实战教程（长篇）](./vibecoding_v1_202605.md)**：从终端入门、Claude Code 进阶、Skills 实践到完整项目的系统教程（2026-05 核对，部分章节时效见文内标注）
 - **[AI Skill 与 MCP 基础](./tech-skills-mcp.md)**：Skill、MCP 及两者关系的基础说明
 - **[MCP 与 Skills 推荐](./mcp-recommendation.md)**：按用途分类的 MCP Server 与 Skills 清单（转载内容，注意时效）
 - **[CC Switch 简介](./tech-cc-switch.md)**：Claude Code / Codex 多供应商配置切换工具

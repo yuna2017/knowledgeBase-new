@@ -10,15 +10,15 @@ authors:
 
 # Vibe Coding 使用指南
 
-这篇指南面向刚开始学习使用 AIDE / AI Coding Agnet（AI编程智能体）的同学。目标不是收集尽可能多的插件，而是先建立一套不会轻易丢代码、泄露密钥或被过时命令卡住的工作方式。
+这篇指南面向刚开始学习使用 AI IDE / AI Coding Agent（AI 编程智能体）的同学。目标不是收集尽可能多的插件，而是先建立一套不会轻易丢代码、泄露密钥或被过时命令卡住的工作方式。
 
 最近核对：2026 年 7 月 10 日。模型名称、订阅额度、CLI 参数和社区项目会继续变化，执行前仍应查看链接中的官方说明。
 
 ## 先看中国大陆使用限制
 
-Claude、OpenAI 和 Gemini API 的官方支持地区目前均不包含中国大陆。校园网能否连接、能否注册账号、能否付款，以及账号是否符合平台条款，是几件不同的事。
+Claude、OpenAI 和 Gemini API 的官方支持地区目前均不包含中国大陆，校园网能否连接、能否注册、能否付款、账号是否符合平台条款，是几件不同的事。
 
-代理或中转只能改变请求经过的线路，不能自动解决账号合规、数据跨境、隐私、资金和模型真实性问题。不要向不清楚数据政策的平台发送身份证信息、成绩、未公开论文、实验数据、实习代码、密码或 API Key。
+代理或中转只能改变请求经过的线路，不能解决账号合规、数据跨境、隐私、资金和模型真实性问题。哪些材料不要发给平台，见 [API 中转站简介](./tech-relay.md#风险与注意事项)。
 
 - [OpenAI API 支持地区](https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories)
 - [Anthropic 支持地区](https://www.anthropic.com/supported-countries)
@@ -28,14 +28,14 @@ Claude、OpenAI 和 Gemini API 的官方支持地区目前均不包含中国大�
 ## 目录
 
 1. 开始前的安全底线
-2. 安装 Claude Code
+2. 安装 omp（Oh My Pi）
 3. 安装 OpenAI Codex
 4. 使用 CC Switch 管理配置
 5. Node.js 环境准备
 6. API Key 与 SDK
 7. Prompt、Agent、MCP 和 Skill
 8. 一套适合新生的开发流程
-9. CLAUDE.md 与 AGENTS.md
+9. AGENTS.md
 10. MCP 和社区工具
 11. 常见问题
 
@@ -112,7 +112,7 @@ uvx --from git+<官方仓库地址>
 
 ---
 
-## 02 · 安装 Oh My Pi
+## 02 · 安装 omp（Oh My Pi）
 
 > A coding agent with the IDE wired in.
 
@@ -191,34 +191,9 @@ codex
 
 CC Switch 是桌面配置管理器，不是 npm CLI。网上流传的 npm 全局安装和 `cc` 命令行教程不是该项目的官方使用方式。
 
-### 安装
-
-Windows：从 [GitHub Releases](https://github.com/farion1231/cc-switch/releases/latest) 下载 `.msi` 或 Portable 版本。
-
-macOS：
-
-```bash
-brew install --cask cc-switch
-```
-
-Arch Linux：
-
-```bash
-paru -S cc-switch-bin
-```
-
-### 使用流程
-
-1. 启动应用并备份现有配置。
-2. 在“供应商”界面选择预设或创建自定义配置。
-3. 填写供应商明确要求的 Base URL、API Key 和模型映射。
-4. 点击“启用”。多数工具需要重启终端或 CLI 才会读取新配置。
-5. 用不含敏感内容的小请求验证文本、流式输出和工具调用。
-6. 需要恢复官方登录时，启用“官方登录”配置并重新完成登录。
+各平台的安装方式和六步使用流程见 [CC Switch 简介](./tech-cc-switch.md)。
 
 CC Switch 不提供模型服务。预设供应商、README 中的赞助商和低价套餐不等于经过安全审计。
-
-详见 [CC Switch 简介](./tech-cc-switch.md)。
 
 ---
 

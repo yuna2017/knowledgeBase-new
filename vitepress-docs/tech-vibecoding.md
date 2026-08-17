@@ -64,6 +64,8 @@ authors:
 
 如果想进一步了解 IDE、AI IDE 和终端中的 Coding Agent，可继续阅读 [AI 编程工具：IDE、AI IDE 与 CLI Coding Agent](./tech-coding-tools.md)。
 
+想系统走一遍「终端入门 → 环境安装 → Claude Code 进阶 → Skills → 完整项目」的完整路线，可阅读长篇教程 [Vibe Coding 实战教程](./vibecoding_v1_202605.md)（部分章节时效以文内标注为准）。
+
 ---
 
 ## 附录 ：到底什么是 Vibe Coding
