@@ -34,6 +34,8 @@ authors:
 - **[HTTP/HTTPS 返回码大全](./tech-http-status-codes.md)**：状态码分类速查、非标准返回码与证书报错排查
 - **[如何优雅地截屏](./tech-screenshot.md)**：各类设备的截图与录屏方法
 - **[免费与开源替代软件清单](./tech-oss-alternatives.md)**：常用付费软件的免费或开源替代品
+- **[图吧工具箱简介与官方下载](./tech-tubaba-toolbox.md)**：免费 Windows 硬件检测工具箱，装机验机常用
+- **[实用在线工具网址](./tech-online-tools.md)**：MD 转 PDF、Base64 编解码、随机数、JSON 格式化等在线工具入口
 
 ### AI 工具、开发工具与自托管
 

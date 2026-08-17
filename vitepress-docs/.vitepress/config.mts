@@ -350,7 +350,8 @@ export default defineConfig({
         items: [
           { text: '一网通办', link: '/campus-service-index' },
           { text: '校园正版化', link: '/campus-ms-index' },
-          { text: '校园邮箱', link: '/campus-mail-index' }
+          { text: '校园邮箱', link: '/campus-mail-index' },
+          { text: '常用部门与公众号', link: '/campus-departments-wechat' }
         ]
       },
       {
@@ -368,6 +369,8 @@ export default defineConfig({
           { text: 'Git 与 GitHub 入门', link: '/tech-git-github' },
           { text: 'HTTP/HTTPS 返回码大全', link: '/tech-http-status-codes' },
           { text: '免费与开源替代软件', link: '/tech-oss-alternatives' },
+          { text: '图吧工具箱', link: '/tech-tubaba-toolbox' },
+          { text: '在线实用工具网址', link: '/tech-online-tools' },
           { text: 'LLM 常用术语', link: '/tech-llm-glossary' },
           { text: 'Vibe Coding 入门', link: '/tech-vibecoding' },
           { text: 'AI 编程工具', link: '/tech-coding-tools' },
