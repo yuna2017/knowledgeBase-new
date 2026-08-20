@@ -27,7 +27,8 @@ jobs:
       - name: Validate documentation and build
         run: npm run build
         env:
-          VITE_VIEWS_API: https://yuna-kb-views.liuguanyu2020.workers.dev
+          # 阅读计数走文档站同源的 Pages Function，避免大陆对 *.workers.dev 的网络限制
+          VITE_VIEWS_API: https://docs.yuna.team
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/pages-action@v1
