@@ -412,7 +412,7 @@ export default defineConfig({
       // 群号本身做成链接：点得动，链接失效时数字也还在，可以手动搜索加群。
       message: [
         `加入我们：QQ 群 <a href="${QQ_GROUP.joinUrl}" target="_blank" rel="noreferrer">${QQ_GROUP.number}</a>`,
-        '<a href="https://opensource.org/licenses/MIT" target="_blank" rel="noreferrer">MIT Licensed</a>'
+        '<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noreferrer">CC BY-NC 4.0</a>'
       ].join(' · '),
       copyright: `Copyright © 2017-2026 ${ORGANIZATION}`
     }
