@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { withBase } from 'vitepress'
 import { data as pages } from '../../pages.data'
+import { data as pinned } from '../../pinned.data'
 import { isRankableArticle } from './page-kind'
 
 interface TopItem {
@@ -22,11 +23,15 @@ const titleMap = computed(() => {
   return map
 })
 
+// 置顶文章已在首页「置顶推荐」展示，不该再占「最高阅读」的位置，
+// 剔除掉，避免同一篇在首页出现两次
+const pinnedUrls = computed(() => new Set(pinned.map((p) => p.url)))
+
 const ranked = computed(() =>
   items.value
     // 标签、贡献指南这类页面也有访问量，但它们不是知识库文章，
     // 混进排行会把首页最显眼的位置让给入口页和维护文档
-    .filter((item) => isRankableArticle(item.page))
+    .filter((item) => isRankableArticle(item.page) && !pinnedUrls.value.has(item.page))
     .slice(0, DISPLAY_COUNT)
     .map((item) => ({
       url: item.page,

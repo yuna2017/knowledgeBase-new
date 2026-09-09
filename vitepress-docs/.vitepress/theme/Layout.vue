@@ -7,6 +7,8 @@ import ArticleTags from './ArticleTags.vue'
 import FrontmatterAuthors from './FrontmatterAuthors.vue'
 import ArticleViews from './ArticleViews.vue'
 import TopViews from './TopViews.vue'
+import PinnedArticles from './PinnedArticles.vue'
+import RecruitBanner from './RecruitBanner.vue'
 import { isAggregatePage, isRankableArticle } from './page-kind'
 
 const { Layout } = DefaultTheme
@@ -28,6 +30,9 @@ const isCountable = computed(() => isRankableArticle(page.value.relativePath))
 
 <template>
   <Layout>
+    <template #layout-top>
+      <RecruitBanner />
+    </template>
     <template #doc-before>
       <template v-if="!isAggregate">
         <ArticleFreshness />
@@ -37,6 +42,7 @@ const isCountable = computed(() => isRankableArticle(page.value.relativePath))
       <ArticleViews v-if="isCountable" />
     </template>
     <template #home-features-after>
+      <PinnedArticles />
       <TopViews />
     </template>
   </Layout>

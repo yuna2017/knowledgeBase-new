@@ -19,3 +19,16 @@ export const QQ_GROUP = {
 // 在这里加回 CONTACT_EMAIL，并在 config.mts 的 footer.message 里补一段。
 
 export const ORGANIZATION = '燕山大学大学生网络信息协会'
+
+/**
+ * 首页顶部招新横幅。
+ *
+ * 横幅组件（theme/RecruitBanner.vue）和需要展示招新信息的地方都读这里，
+ * 改一处即可。招募季结束把 enabled 改成 false，横幅全站消失，不用动组件。
+ * 文案里沿用永久有效的群号 + 一键加群链接（见上方 QQ_GROUP 的说明）。
+ */
+export const RECRUITMENT = {
+  enabled: true,
+  text: '协会招新进行中：加入 QQ 群 978801324，共建 YUNA 知识库',
+  link: QQ_GROUP.joinUrl
+}

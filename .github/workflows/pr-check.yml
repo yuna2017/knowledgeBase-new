@@ -33,6 +33,14 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 置顶文章只允许 owner 直接 push 到 main 修改，任何 PR 一律不允许改动。
+      # 该脚本只跑在 pull_request 流程里；owner 的 main 直推走 deploy.yml（push 触发），
+      # 不经过这里，所以无需按作者区分，PR 里改动置顶文章直接拦截。
+      - name: 校验置顶文章（仅限 owner 直接提交）
+        run: node scripts/check-pinned.mjs
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
       - name: Install dependencies
         run: npm ci
 
