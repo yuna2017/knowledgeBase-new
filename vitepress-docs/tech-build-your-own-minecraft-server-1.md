@@ -1,5 +1,5 @@
 ---
-description: 介绍怎么购买域名，怎么样使用DDNS-Go
+description: 本文以阿里云为例，完整介绍 Minecraft 服务器搭建前的域名准备：如何购买域名、配置云解析，并安装和设置 DDNS-Go，将动态公网 IPv4/IPv6 地址自动同步到 A/AAAA 记录,同时说明 AccessKey 配置和 IPv6 使用时的注意事项。
 tags:
   - Minecraft
   - 网络服务
