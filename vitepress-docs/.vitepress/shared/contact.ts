@@ -28,7 +28,7 @@ export const ORGANIZATION = '燕山大学大学生网络信息协会'
  * 文案里沿用永久有效的群号 + 一键加群链接（见上方 QQ_GROUP 的说明）。
  */
 export const RECRUITMENT = {
-  enabled: true,
+  enabled: false,
   text: '协会招新进行中：加入 QQ 群 978801324，共建 YUNA 知识库',
   link: QQ_GROUP.joinUrl
 }
