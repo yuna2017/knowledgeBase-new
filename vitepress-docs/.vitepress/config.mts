@@ -350,7 +350,8 @@ export default defineConfig({
         items: [
           { text: '一网通办', link: '/campus-service-index' },
           { text: '校园正版化', link: '/campus-ms-index' },
-          { text: '校园邮箱', link: '/campus-mail-index' }
+          { text: '校园邮箱', link: '/campus-mail-index' },
+          { text: '常用部门与公众号', link: '/campus-departments-wechat' }
         ]
       },
       {
@@ -368,10 +369,13 @@ export default defineConfig({
           { text: 'Git 与 GitHub 入门', link: '/tech-git-github' },
           { text: 'HTTP/HTTPS 返回码大全', link: '/tech-http-status-codes' },
           { text: '免费与开源替代软件', link: '/tech-oss-alternatives' },
+          { text: '图吧工具箱', link: '/tech-tubaba-toolbox' },
+          { text: '在线实用工具网址', link: '/tech-online-tools' },
           { text: 'LLM 常用术语', link: '/tech-llm-glossary' },
           { text: 'Vibe Coding 入门', link: '/tech-vibecoding' },
           { text: 'AI 编程工具', link: '/tech-coding-tools' },
           { text: 'Vibe Coding 使用指南', link: '/tech-vibe-coding-guide' },
+          { text: 'Vibe Coding 实战教程（长篇）', link: '/vibecoding_v1_202605' },
           { text: 'AI Skill 与 MCP 基础', link: '/tech-skills-mcp' },
           { text: 'MCP 与 Skills 推荐', link: '/mcp-recommendation' },
           { text: 'CC Switch 简介', link: '/tech-cc-switch' },
@@ -408,7 +412,7 @@ export default defineConfig({
       // 群号本身做成链接：点得动，链接失效时数字也还在，可以手动搜索加群。
       message: [
         `加入我们：QQ 群 <a href="${QQ_GROUP.joinUrl}" target="_blank" rel="noreferrer">${QQ_GROUP.number}</a>`,
-        '<a href="https://opensource.org/licenses/MIT" target="_blank" rel="noreferrer">MIT Licensed</a>'
+        '<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noreferrer">CC BY-NC 4.0</a>'
       ].join(' · '),
       copyright: `Copyright © 2017-2026 ${ORGANIZATION}`
     }

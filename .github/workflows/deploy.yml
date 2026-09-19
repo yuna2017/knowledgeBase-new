@@ -27,7 +27,8 @@ jobs:
       - name: Validate documentation and build
         run: npm run build
         env:
-          VITE_VIEWS_API: https://yuna-kb-views.liuguanyu2020.workers.dev
+          # 阅读计数走文档站同源的 Pages Function，避免大陆对 *.workers.dev 的网络限制
+          VITE_VIEWS_API: https://docs.yuna.team
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -47,3 +48,38 @@ jobs:
           # 手动触发时 github.event.before 为空，脚本会退回全量提交
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
+
+  # 阅读量 Worker 与排行 Worker：推送后自动重新生成文章清单
+  # （标题 / 上传时间）并重新部署，保证排行统计随文档更新，无需手动 wrangler。
+  # 注：daily_views 表已在 D1 长就绪，迁移步骤不再需要。
+  deploy-workers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gen-titles.mjs 用 git log 取每篇的上传时间
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate ranking page titles
+        run: node gen-titles.mjs
+        working-directory: worker-ranking
+
+      - name: Deploy views worker
+        run: npx wrangler deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy ranking worker
+        run: npx wrangler deploy
+        working-directory: worker-ranking
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

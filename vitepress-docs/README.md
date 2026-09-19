@@ -52,4 +52,4 @@ npm run build
 
 - [GitHub：yuna2017/knowledgeBase-new](https://github.com/yuna2017/knowledgeBase-new)
 
-本项目使用 MIT License。
+本项目内容采用 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans)（知识共享 署名—非商业性使用 4.0 国际）许可协议。

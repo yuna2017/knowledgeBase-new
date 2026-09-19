@@ -22,7 +22,7 @@ Cloudflare 是常见的 DNS、CDN 和边缘计算服务商。它有免费计划�
 | D1 / KV | 数据库与键值存储 | 均有免费用量，读写、存储等限制分别以产品文档为准 |
 | Tunnel | 将内网服务接入 Cloudflare | 可免费使用基础功能，但公开服务仍需自己配置鉴权和安全策略 |
 | Turnstile | 验证码 | 有免费计划，使用范围和限制看官方文档 |
-| Email Routing | 自定义域名收件转发 | 可把收到的邮件转发到现有邮箱，不提供以该域名发信的完整邮箱服务 |
+| Email Routing | 自定义域名收件转发 | 可把收到的邮件转发到现有邮箱，不是可发信的完整邮箱服务 |
 | Zero Trust / Access | 身份验证和访问控制 | 有免费计划，人数和功能限制查看 [Zero Trust 定价](https://www.cloudflare.com/plans/zero-trust-services/) |
 
 ## 常见用法
@@ -48,7 +48,7 @@ Cloudflare 是常见的 DNS、CDN 和边缘计算服务商。它有免费计划�
 
 **Cloudflare Tunnel**（`cloudflared`）可以让 Cloudflare 连接本地或校园网内的服务，不要求用户持有公网 IP，也不需要在路由器上开放入站端口。
 
-Tunnel 不是自动的安全屏障。没有配置 Cloudflare Access 或应用自身登录时，服务仍可能直接暴露给公网；部署前还要确认校园网规定，及时更新系统，并避免公开管理后台、文件共享和没有密码的开发服务。**注意：校园网环境下的校园网服务无法使用该服务，中国电信等运营商服务可以使用。**
+Tunnel 不是自动的安全屏障。没有配置 Cloudflare Access 或应用自身登录时，服务仍可能直接暴露给公网；部署前还要确认校园网规定，及时更新系统，并避免公开管理后台、文件共享和没有密码的开发服务。校园网等特定接入环境下的可用性限制见[自托管入门](./tech-self-hosting.md)。
 
 ### 5. 域名相关
 
@@ -58,7 +58,7 @@ Tunnel 不是自动的安全屏障。没有配置 Cloudflare Access 或应用自
 ## 注意事项
 
 - 普通 Free / Pro 计划不包含 [Cloudflare China Network](https://developers.cloudflare.com/china-network/)，不能据此承诺中国大陆低延迟或境内节点。China Network 是单独的企业服务，并要求满足 ICP 备案等条件。
-- Cloudflare 免费 CDN 不能替代中国大陆服务器所需的备案，也不能解决跨境访问和数据合规问题。面向大陆公众长期提供服务时，应单独评估部署区域、备案和个人信息处理要求。
+- Cloudflare 免费 CDN 不能替代中国大陆服务器所需的 ICP 备案（见[域名申请与管理](./tech-domain.md#避坑提醒)），也不能解决跨境访问和数据合规问题。
 - 免费计划受服务条款和合理使用政策约束，不适合把视频代理、文件分发等高流量场景默认当成“无限流量”。
 - Workers 免费计划有 CPU 时间等限制，不适合重计算任务；具体限制以当前文档为准。
 
