@@ -40,7 +40,7 @@ authors:
 
 （A记录是负责 IPv4，AAAA 记录负责 IPv6。**需要注意的是，若同时启用A记录和AAAA记录，Java会优先使用 IPv6，但若客户端的网络不支持 IPv6，将会导致无法连接的情况！**）
 
-然后进入 https://localhost:9876
+然后进入 `https://localhost:9876`
 ![DDNS-GO配置界面](./images/DDNS-GO.png)
 点击创建 AccessKey，会直接跳转到阿里云的 AccessKey 管理界面
 ![AccessKey管理界面](./images/AccessKey-1.png)
