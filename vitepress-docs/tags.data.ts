@@ -26,7 +26,11 @@ export default createContentLoader('*.md', {
           : rawTags
             ? [String(rawTags).trim()]
             : []
-        const heading = page.src?.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim()
+        const heading = (() => {
+          // 先剥掉 frontmatter 再找一级标题，避免把 frontmatter 里以 # 开头的注释当标题
+          const body = page.src?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+          return body?.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim()
+        })()
         // createContentLoader 给的是站点 URL，换算回仓库里的源文件路径
         const relative = 'vitepress-docs' + (page.url === '/' ? '/index' : page.url) + '.md'
 

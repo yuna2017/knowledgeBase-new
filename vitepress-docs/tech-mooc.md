@@ -21,10 +21,9 @@ authors:
 - **[MIT OpenCourseWare](https://ocw.mit.edu/)**：MIT 课程资料完全公开，无需注册
 - **[freeCodeCamp](https://www.freecodecamp.org/chinese/)**：编程实战路线 + 免费证书，有中文版
 
-## 经典自学路线参考
+## 系统自学路线
 
-- **计算机科学全套**：[CS自学指南（csdiy.wiki）](https://csdiy.wiki/) —— 中文社区维护的名校课程自学地图（MIT 6.006、CS61 系列、CMU 15-213 等），含资料和作业获取方式
-- **[The Missing Semester](https://missing-semester-cn.github.io/)**：MIT 的工具课，内容包括 Shell、Git、调试、数据处理（与本板块 [Git 入门](./tech-git-github.md)互补）
+按课程体系自学的路线图（csdiy、Missing Semester 等）见 [计算机自学指南](./tech-self-learning.md)。
 
 ## 使用建议
 

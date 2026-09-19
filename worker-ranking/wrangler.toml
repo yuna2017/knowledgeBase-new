@@ -1,0 +1,9 @@
+name = "yuna-kb-ranking"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# 与计数 Worker（yuna-kb-views）共用同一个 D1 库
+[[d1_databases]]
+binding = "DB"
+database_name = "yuna-kb-views"
+database_id = "fa3ebf5a-5c7e-4c46-92a8-67f6bd65d2aa"

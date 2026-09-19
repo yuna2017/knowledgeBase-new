@@ -481,3 +481,138 @@
   color: var(--vp-c-text-3);
   font-size: 13px;
 }
+
+/* ---- 首页置顶推荐 ---- */
+
+.pinned-articles {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 32px 24px 0;
+}
+
+@media (min-width: 640px) {
+  .pinned-articles {
+    padding-top: 44px;
+  }
+}
+
+@media (min-width: 960px) {
+  .pinned-articles {
+    padding-top: 56px;
+  }
+}
+
+.pinned-articles__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+  border: none;
+  padding: 0;
+}
+
+.pinned-articles__hint {
+  margin: 0 0 16px;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+}
+
+.pinned-articles__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pinned-articles__card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  text-decoration: none !important;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.pinned-articles__card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  transform: translateY(-1px);
+}
+
+.pinned-articles__title-text {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.pinned-articles__card:hover .pinned-articles__title-text {
+  color: var(--vp-c-brand-1);
+}
+
+.pinned-articles__desc {
+  flex: 1;
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ---- 全站顶部招新横幅 ---- */
+
+/* layout-top 是默认主题在最顶部的插槽，横幅要先于导航栏渲染；
+   这里让它吸顶，并用 --vp-layout-top-height 把导航栏与正文整体下移 */
+.layout-top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 130;
+}
+
+.recruit-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 44px 10px 16px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.recruit-banner a {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.recruit-banner a:hover {
+  text-decoration: underline;
+}
+
+.recruit-banner__close {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vp-c-text-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.recruit-banner__close:hover {
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-default-soft);
+}
