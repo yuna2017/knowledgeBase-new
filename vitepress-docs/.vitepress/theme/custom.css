@@ -955,6 +955,22 @@ a.home-card:hover {
 }
 
 /*
+ * 「要修正哪一篇」只在选了「已有内容要修正」时才出现。
+ *
+ * 这里用 CSS :has() 而不是 Vue 的 v-if，是因为 **v-if 会把无 JS 的读者挡在外面**：
+ * SSR 时 kind 的初值是 gap，`v-if="kind === 'fix'"` 直接不渲染，
+ * 字段压根不在预渲染的 HTML 里——于是脚本没跑起来的读者选了「修正」也没法填。
+ * :has() 是浏览器原生的，跟着 :checked 走，不需要任何脚本。
+ *
+ * 刻意写成「选中 gap 时隐藏」而不是「选中 fix 时显示」：不支持 :has() 的浏览器
+ * （Firefox 121 以前）会整条规则忽略，字段保持常显。宁可多显示一栏，
+ * 也不要让它凭空消失、还没人发现。
+ */
+.feedback-form:has(input[name='kind'][value='gap']:checked) .feedback-form__article {
+  display: none;
+}
+
+/*
  * Turnstile 容器。用 interaction-only，正常读者看不到它，
  * 所以这里留一点空间但不画框——不加载时不该在表单里留一个空盒子。
  */

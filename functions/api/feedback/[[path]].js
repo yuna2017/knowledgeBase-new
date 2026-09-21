@@ -450,7 +450,9 @@ async function handleSubmit(context) {
   const kind = clean(fields.kind, 8)
   const want = clean(fields.want, WANT_MAX)
   const scene = clean(fields.scene, SCENE_MAX)
-  const article = clean(fields.article, ARTICLE_MAX)
+  // 「缺口」不带「针对哪一篇」：用户可能先选了修正、填了、又改回缺口，
+  // 前端那个字段是靠 CSS 跟着单选框显隐的，值还在模型里，所以这里兜一道。
+  const article = kind === 'fix' ? clean(fields.article, ARTICLE_MAX) : ''
   const contact = clean(fields.contact, CONTACT_MAX)
 
   if (!CATEGORIES.includes(category)) return fail(400, 'invalid category', '/wanted?error=1')

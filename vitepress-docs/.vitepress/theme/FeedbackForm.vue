@@ -405,10 +405,10 @@ onMounted(() => {
         />
       </div>
 
-      <div class="feedback-form__row">
+      <div class="feedback-form__row feedback-form__article">
         <label class="feedback-form__label" for="fb-article">
           要修正哪一篇
-          <span class="feedback-form__hint">选了上面第二项就填这里</span>
+          <span class="feedback-form__hint">标题或站内地址都行</span>
         </label>
         <input
           id="fb-article"
@@ -417,7 +417,7 @@ onMounted(() => {
           name="article"
           type="text"
           maxlength="200"
-          placeholder="文章标题或站内地址，比如 /campus-network-vpn"
+          placeholder="比如 /campus-network-vpn 或「校园网 VPN」"
         />
       </div>
     </fieldset>

@@ -216,6 +216,20 @@ test('字段校验：空 want / 空 scene / 非法分类 / 非法 kind 都是 40
   assert.equal(count('feedback'), 0)
 })
 
+test('「缺口」不带「针对哪一篇」，即使请求里塞了也不存', async () => {
+  await onRequestPost(ctx(post('/api/feedback', {
+    ...VALID, kind: 'gap', article: '/campus-card'
+  }, IP_A)))
+  assert.equal(rows('SELECT article FROM feedback')[0].article, null)
+})
+
+test('「勘误」保留「针对哪一篇」', async () => {
+  await onRequestPost(ctx(post('/api/feedback', {
+    ...VALID, kind: 'fix', article: '/campus-card'
+  }, IP_A)))
+  assert.equal(rows('SELECT article FROM feedback')[0].article, '/campus-card')
+})
+
 test('表单编码提交返回 303 且跳 /wanted-done', async () => {
   const body = new URLSearchParams({
     category: '一卡通', kind: 'fix', want: '补办地点变了', scene: '照着文章跑空',
@@ -412,7 +426,9 @@ test('一键删掉全部可疑，正常条目不受影响', async () => {
 })
 
 test('审计列表带出新增字段，并按「可疑排最后」返回', async () => {
-  await onRequestPost(ctx(post('/api/feedback', { ...VALID, article: '/campus-card' }, IP_A)))
+  await onRequestPost(ctx(post('/api/feedback', {
+    ...VALID, kind: 'fix', want: '补办地点变了', article: '/campus-card'
+  }, IP_A)))
   await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_B)))
 
   const res = await onRequestGet(ctx(get('/api/feedback/list', { Cookie: cookie })))
