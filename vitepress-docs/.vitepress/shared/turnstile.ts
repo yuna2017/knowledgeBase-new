@@ -15,7 +15,7 @@
  * 再把下面的 site key 填上。**留空 = 整个功能关闭**：页面不加载任何第三方脚本，
  * 服务端也不做验证，回到蜜罐 + 耗时 + 限频那三样。
  */
-export const TURNSTILE_SITE_KEY = ''
+export const TURNSTILE_SITE_KEY = '0x4AAAAAAE-_0QdRKfmzxgR3'
 
 /**
  * 与 functions/api/feedback/[[path]].js 里的 TURNSTILE_ACTION 必须一致。
