@@ -29,7 +29,8 @@ const apiUrl = pathToFileURL(
   resolve(repoRoot, 'functions/api/feedback/[[path]].js')
 ).href
 
-const { onRequestGet, onRequestPost, schemaStatements, CATEGORIES } = await import(apiUrl)
+const { onRequestGet, onRequestPost, schemaStatements, bootstrapSchema, CATEGORIES } =
+  await import(apiUrl)
 
 /* ------------------------------------------------------------------ 假 D1 */
 
@@ -162,6 +163,66 @@ test('feedback 表的列齐全（少一列就说明迁移没跟上）', () => {
     'status', 'resolved_label', 'resolved_url', 'suspicious', 'flag_reason',
     'ip_hash', 'created_at', 'updated_at', 'ticket'
   ])
+})
+
+/**
+ * 上面那条测试是从零建表，永远比不出「线上老库缺列」。
+ * 这条专门模拟线上那张早先建好的表：只要它缺 flag_reason / ticket，
+ * INSERT 就会 `no such column` —— 表现是**所有提交 500、审计页 500**，
+ * 而 ensureSchema 的报错是被吞掉的，症状会藏得很深。
+ * （真实踩过：加了 ticket 和 flag_reason 两列，都只改 DDL 没写 ALTER。）
+ */
+test('老库缺列时会把 ticket / flag_reason 补上，老数据不丢', async () => {
+  const legacy = new DatabaseSync(':memory:')
+  legacy.exec(
+    `CREATE TABLE feedback (
+       id         INTEGER PRIMARY KEY AUTOINCREMENT,
+       category   TEXT    NOT NULL,
+       kind       TEXT    NOT NULL,
+       want       TEXT    NOT NULL,
+       scene      TEXT    NOT NULL,
+       contact    TEXT,
+       status     TEXT    NOT NULL DEFAULT 'new',
+       ip_hash    TEXT,
+       created_at INTEGER NOT NULL
+     )`
+  )
+  legacy.exec(
+    `INSERT INTO feedback (category, kind, want, scene, created_at)
+     VALUES ('其他', 'gap', '迁移前的老稿子', '场景', 1)`
+  )
+  const legacyDb = {
+    prepare: (sql) => new Stmt(legacy, sql),
+    async batch(statements) {
+      const out = []
+      for (const statement of statements) out.push(await statement.run())
+      return out
+    }
+  }
+
+  await bootstrapSchema(legacyDb)
+
+  const sorted = (list) => [...list].sort()
+  const names = legacy.prepare('PRAGMA table_info(feedback)').all().map((c) => c.name)
+  assert.ok(names.includes('flag_reason'), 'flag_reason 没补上：INSERT 会 no such column')
+  assert.ok(names.includes('ticket'), 'ticket 没补上：唯一索引本身就会报错')
+  assert.deepEqual(
+    sorted(names),
+    sorted(rows('PRAGMA table_info(feedback)').map((c) => c.name)),
+    '补完之后列应当和新库完全一致'
+  )
+  assert.equal(Number(legacy.prepare('SELECT COUNT(*) AS n FROM feedback').get().n), 1, '老数据不能丢')
+
+  // 补完之后真的能按新列写入 —— 这就是线上那一步 500
+  legacy.exec(
+    `INSERT INTO feedback
+       (ticket, category, kind, want, scene, status, suspicious, flag_reason, ip_hash, created_at, updated_at)
+     VALUES ('AAAA-BBBB', '其他', 'gap', 'x', 'y', 'new', 0, 'no_token', 'h', 1, 1)`
+  )
+  assert.equal(Number(legacy.prepare('SELECT COUNT(*) AS n FROM feedback').get().n), 2)
+
+  // 幂等：isolate 冷启动可能重跑，重跑不该报错
+  await bootstrapSchema(legacyDb)
 })
 
 /* ------------------------------------------------------------------ 提交 */
@@ -411,7 +472,7 @@ test('删除单条', async () => {
   assert.equal(count('feedback'), 0)
 })
 
-test('一键删掉全部可疑，正常条目不受影响', async () => {
+test('一键删掉蜜罐与过快，正常条目不受影响', async () => {
   await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
   await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_B)))
   await onRequestPost(ctx(post('/api/feedback', { ...VALID, elapsed: 10 }, IP_B)))
@@ -860,6 +921,36 @@ test('没有用户可见的「组件没加载出来」提示，且主路径是�
   )
   assert.ok(form.includes('cf-turnstile'), '隐式渲染需要 .cf-turnstile 这个 class')
   assert.ok(form.includes('data-sitekey'), '隐式渲染需要 data-sitekey')
+})
+
+test('令牌是一次性的：待发不留令牌、作废后要换新的、等令牌前先上锁', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  // 存本地待发时必须去掉令牌：它只能用一次，存了下次也用不了，
+  // 服务端会以「令牌无效」直接 400 拒掉，而失败又会再存一遍 —— 那条永远发不出去
+  assert.ok(
+    form.includes("delete safe['cf-turnstile-response']"),
+    'savePending 没有去掉一次性令牌'
+  )
+  // 服务端说令牌无效时要：清掉表单里那枚废令牌 + reset 组件重新出一枚
+  assert.ok(form.includes('function resetTurnstile'), '缺少换新令牌的逻辑')
+  assert.ok(
+    form.includes("input[name=\"cf-turnstile-response\"]"),
+    'resetTurnstile 没有清掉表单里作废的令牌'
+  )
+  assert.ok(form.includes('api.reset?.(widgetId)'), '显式渲染那条路 reset 要带上 widgetId')
+  // SPA 转走时把 widget 摘掉，别在 Turnstile 的注册表里留孤儿
+  assert.ok(form.includes('onUnmounted'), '缺少卸载时的清理')
+  assert.ok(form.includes('remove?.(widgetId)'), '卸载时没有 remove 掉 widget')
+  // 等令牌之前就必须上锁，否则那几秒按钮还是可点的，连点会提交两次
+  const from = form.indexOf('async function submitWithVerification')
+  const lockAt = form.indexOf('sending.value = true', from)
+  const waitAt = form.indexOf('await waitForTurnstileToken()', from)
+  assert.ok(lockAt > 0, 'submitWithVerification 没有上锁')
+  assert.ok(waitAt > 0, 'submitWithVerification 没有等令牌')
+  assert.ok(lockAt < waitAt, '上锁必须发生在等令牌之前')
 })
 
 test('TURNSTILE_ACTION 前后端一致', () => {

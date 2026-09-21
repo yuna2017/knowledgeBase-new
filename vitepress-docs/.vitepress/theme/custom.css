@@ -965,14 +965,15 @@ a.home-card:hover {
 }
 
 /*
- * Turnstile 的挂载点。用 interaction-only + 显式渲染，正常读者看不到它，
- * 所以这里只留间距，不画框、不固定高度——没加载出来时不该在表单里留个空盒子。
+ * Turnstile 的挂载点。用 interaction-only，正常读者看不到它，所以这里不画框、
+ * 不固定高度；只在**渲染出东西之后**才留那段间距，空着的时候不留空盒子。
+ *
+ * 刻意不写 `.feedback-form__verify:empty { display: none }`：隐式渲染扫描 DOM 的
+ * 那一刻这个容器正是空的，挂上 display:none 等于让 Turnstile 在一个不显示的
+ * 节点里初始化（`size: flexible` 也量不到宽度）——那是「请求发出去了却没有一个
+ * 挑战请求」的典型成因。用 :not(:empty) 就没有这个先有鸡还是先有蛋的问题。
  */
-.feedback-form__verify:empty {
-  display: none;
-}
-
-.feedback-form__verify {
+.feedback-form__verify:not(:empty) {
   margin: 0 0 18px;
 }
 

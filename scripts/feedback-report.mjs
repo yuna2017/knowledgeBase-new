@@ -33,6 +33,19 @@ const STATUS_LABEL = {
   rejected: '不采纳'
 }
 
+/**
+ * 可疑的原因，和审计页的 FLAG_LABEL 一致。
+ * trap / fast 几乎可以确定是脚本；no_token / verify_down 很可能只是提交者的网络
+ * 到不了 Cloudflare —— 里面是真反馈，所以这两类要单独报出来。
+ */
+const FLAG_LABEL = {
+  trap: '可疑·蜜罐',
+  fast: '可疑·过快',
+  no_token: '可疑·未验证',
+  verify_down: '可疑·验证不可达',
+  manual: '可疑·手动'
+}
+
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const countsPath = resolve(projectRoot, 'vitepress-docs/.vitepress/data/feedback-counts.json')
 
@@ -117,7 +130,7 @@ function printDetail(items) {
     console.log('')
     console.log(
       '  #' + item.id + '  [' + (STATUS_LABEL[item.status] || item.status) + ']' +
-      (Number(item.suspicious) === 1 ? ' [可疑]' : '') +
+      (Number(item.suspicious) === 1 ? ' [' + (FLAG_LABEL[item.flag_reason] || '可疑') + ']' : '') +
       ' ' + item.category + ' / ' + (item.kind === 'fix' ? '勘误' : '缺口') +
       '  ' + utc8(Number(item.created_at))
     )
@@ -137,8 +150,9 @@ async function main() {
   let rows
   let publishedRows
   let suspicious = 0
+  let unverified = 0
   try {
-    // 公开统计一律排除可疑条目（蜜罐误判的垃圾），审计明细里才看得到
+    // 公开统计一律排除可疑条目（蜜罐垃圾 + 没通过验证的），审计明细里才看得到
     totals = await query('SELECT COUNT(*) AS total FROM feedback WHERE suspicious = 0')
     kindRows = await query(
       'SELECT kind, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY kind'
@@ -153,6 +167,10 @@ async function main() {
     )
     const sus = await query('SELECT COUNT(*) AS n FROM feedback WHERE suspicious = 1')
     suspicious = Number((sus[0] || {}).n) || 0
+    const uv = await query(
+      "SELECT COUNT(*) AS n FROM feedback WHERE suspicious = 1 AND flag_reason IN ('no_token', 'verify_down')"
+    )
+    unverified = Number((uv[0] || {}).n) || 0
   } catch (error) {
     const message = String(error && error.message ? error.message : error)
     if (/no such table/i.test(message)) {
@@ -160,6 +178,9 @@ async function main() {
       process.exit(1)
     }
     console.error('读取 D1 失败：' + message)
+    if (/no such column/i.test(message)) {
+      console.error('提示：列缺失说明补列迁移还没跑过。让站点先访问一次 /api/feedback（接口会自动补），或者手工执行 docs/feedback-deploy.md 里的 ALTER TABLE。')
+    }
     process.exit(1)
   }
 
@@ -179,9 +200,21 @@ async function main() {
     }
     if (!stats.total) console.log('  （还没有反馈）')
     if (suspicious) {
+      const traps = suspicious - unverified
       console.log('')
-      console.log('  另有 ' + suspicious + ' 条可疑（蜜罐或填得太快），不计入上面的数字。')
-      console.log('  确认是垃圾就去审计页筛「只看可疑」，点「删掉全部可疑」。')
+      console.log(
+        '  另有 ' + suspicious + ' 条可疑，不计入上面的数字：' +
+        '蜜罐 / 过快 ' + traps + ' 条，未验证 ' + unverified + ' 条。'
+      )
+      if (traps) {
+        console.log('  蜜罐 / 过快那批确认是垃圾后，去审计页点「删掉蜜罐与过快」。')
+      }
+      if (unverified) {
+        console.log(
+          '  ⚠️ 未验证那 ' + unverified + ' 条**先看内容**：很可能只是网络到不了 ' +
+          'Cloudflare 的真反馈。确认是真人写的就点「标记为正常」，它会立刻计入统计。'
+        )
+      }
     }
   }
 
@@ -195,7 +228,7 @@ async function main() {
     printDetail(
       await query(
         `SELECT id, category, kind, want, scene, article, contact, status,
-                resolved_label, resolved_url, suspicious, created_at
+                resolved_label, resolved_url, suspicious, flag_reason, created_at
            FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT 200`
       )
     )

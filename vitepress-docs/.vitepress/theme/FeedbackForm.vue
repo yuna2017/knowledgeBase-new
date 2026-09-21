@@ -16,7 +16,7 @@
  * 3. 蜜罐字段对用户隐藏，脚本会填。服务端只把它标成「可疑」，**不丢**——
  *    浏览器自动填充有可能命中，真用户不该因此白填。
  */
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { TURNSTILE_ACTION, TURNSTILE_SITE_KEY } from '../shared/turnstile'
 
 const CATEGORIES = [
@@ -135,9 +135,20 @@ function clearDraft() {
   }
 }
 
-function savePending(payload: unknown) {
+/**
+ * 存一份「还没发出去」的料，下次进页面自动补发。
+ *
+ * ⚠️ **令牌一定要去掉。** Turnstile 的令牌是一次性的（官方：每枚只能验证一次，
+ * 5 分钟过期），存下来下次也用不了——服务端会以「令牌无效」直接拒（400），
+ * 而失败又会把它再存一遍，那条反馈就永远送不出去。
+ * 去掉令牌之后，补发走的是「没有令牌」那条路：服务端照收并标成可疑，等人复核。
+ * **宁可被标可疑，也不能永远发不出去。**
+ */
+function savePending(payload: Record<string, unknown>) {
+  const safe = { ...payload }
+  delete safe['cf-turnstile-response']
   try {
-    localStorage.setItem(STORAGE_PENDING, JSON.stringify(payload))
+    localStorage.setItem(STORAGE_PENDING, JSON.stringify(safe))
   } catch {
     // 忽略
   }
@@ -189,9 +200,11 @@ async function postOnce(payload: Record<string, unknown>): Promise<{
   }
 }
 
+/**
+ * 真正发请求的那一段。`sending` 的开关由 submitWithVerification 管（它要在
+ * **等令牌之前**就上锁，否则等的那几秒里按钮还是可点的，连点会提交两次）。
+ */
 async function send(payload: Record<string, unknown>) {
-  if (sending.value) return
-  sending.value = true
   canFallback.value = false
   message.value = '提交中…'
 
@@ -209,12 +222,11 @@ async function send(payload: Record<string, unknown>) {
       return
     }
 
-    // 令牌无效（多半是放了一会儿过期了）：换一个新的，让用户再点一次就行
+    // 令牌无效（放久了过期，或者刚才已经被用掉一次）：清掉那枚废令牌、
+    // 让组件重新出一枚，用户再点一次提交就行。不清的话再点一次带的还是它。
     if (result.tokenRejected) {
-      sending.value = false
-      canFallback.value = true
       resetTurnstile()
-      message.value = '人机验证过期了，已经换了一个新的，麻烦再点一次提交。'
+      message.value = '人机验证的令牌过期了，已经重新验证，麻烦再点一次提交。'
       return
     }
     reason = result.reason
@@ -223,24 +235,33 @@ async function send(payload: Record<string, unknown>) {
     if (attempt < MAX_ATTEMPTS) await sleep(600 * attempt)
   }
 
-  sending.value = false
   canFallback.value = true
   savePending(payload)
+  // 这条失败里带着的那枚令牌已经不可信（可能被服务端验过一次了，只能用一次）：
+  // 清掉它并让组件重新出一枚，这样「重试」带的不是一枚废令牌
+  if (payload['cf-turnstile-response']) resetTurnstile()
   message.value =
     '提交失败：' + reason + '。内容已经留在页面上，也存了一份在本机——' +
     '可以点「重试」，或者点「复制内容」粘贴到 QQ 群。'
 }
 
 /**
- * 提交。**组件能用就要求先把验证走完**；组件用不了就什么都不管，直接交。
+ * 提交。**先给验证一个很短的机会**：令牌已经在表单里就直接交，还没到就等
+ * `TURNSTILE_WAIT_MS`；组件明显没起来就完全不等。
  *
- * 闸门必须在客户端：只有这里知道组件到底加载出来了没有。服务端只能看到
- * 「有没有令牌」，分不清「组件没加载」和「机器人压根没发」。
+ * 闸门放在客户端，是因为只有这里知道「组件到底起来了没有」；而放行的标准很宽——
+ * 拿不到令牌也照交，服务端会把它标成可疑（原因 `no_token`），不会丢稿。
  */
 async function submitWithVerification() {
   if (sending.value) return
-  await waitForTurnstileToken()
-  await send(collect())
+  // 先上锁再等：等令牌那几秒按钮必须是禁用的
+  sending.value = true
+  try {
+    await waitForTurnstileToken()
+    await send(collect())
+  } finally {
+    sending.value = false
+  }
 }
 
 async function onSubmit(event: SubmitEvent) {
@@ -326,9 +347,13 @@ async function flushPending() {
     return
   }
 
+  // 补发的 payload 里**刻意没有令牌**（savePending 存的时候就删掉了）：
+  // 走「没有令牌」那条路一定会被收下（标成可疑），而带一枚旧令牌只会被 400 拒掉。
+  // 这里不现取一枚新令牌，是因为令牌一次性，抢来的那枚可能正好被读者自己
+  // 点提交用掉，反而两边都失败。
   const result = await postOnce(payload)
   if (result.ok) {
-    message.value = '上次有一条没发送成功的反馈，刚才已经自动补发了。'
+    message.value = '上次有一条没发送成功的反馈，刚才已经自动补发了（可能被标成可疑）。'
     return
   }
   savePending(payload)
@@ -337,12 +362,13 @@ async function flushPending() {
 /* ------------------------------------------------------------ 机器人验证 */
 
 /**
- * Turnstile 人机验证。
+ * Turnstile 人机验证。判断标准就一条：**表单里有令牌 = 通过，没有 = 没通过**。
+ * 没通过不会拦人——服务端照收，只是带上原因标成可疑，等维护者复核。
  *
  * **用隐式渲染**：脚本加载后自己扫 `.cf-turnstile`，把令牌写进表单里一个隐藏
- * input。曾经为了「SPA 转回来时隐式渲染不会重扫 DOM」改成 `?render=explicit`，
- * 结果线上一个挑战请求都没有（`script` 的 load 事件不代表 API 就绪），退回来了。
- * **能用比优雅重要。**
+ * input（`cf-turnstile-response`）。曾经为了「SPA 转回来时隐式渲染不会重扫 DOM」
+ * 改成 `?render=explicit` 手动渲染，结果线上一个挑战请求都没有
+ * （`script` 的 load 事件不代表 API 就绪），退回来了。**能用比优雅重要。**
  *
  * 那条 SPA 顾虑换个办法解决：挂载时如果 Turnstile API **已经存在**，说明脚本
  * 上一轮就加载过了、这次是转回来重新挂载，就补一次显式渲染；首次进入完全不碰，
@@ -356,16 +382,20 @@ const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
 
 interface TurnstileApi {
   render?: (el: HTMLElement, options: Record<string, unknown>) => string
-  reset?: () => void
+  reset?: (widgetId?: string) => void
+  remove?: (widgetId: string) => void
 }
 
-/** 等令牌的上限。等到头就放行——卡住的组件不该把人永远挡在门外 */
-const TURNSTILE_WAIT_MS = 10000
+/** 等令牌的上限。刻意很短：等到头就照交，服务端标成可疑，人复核 */
+const TURNSTILE_WAIT_MS = 3000
 /** 等 API 就绪的上限 */
 const TURNSTILE_API_WAIT_MS = 5000
 
-/** 组件明显没起来（脚本被挡 / API 没就绪 / 渲染失败）——这时不等令牌，直接放行 */
+/** 组件明显没起来（脚本被挡 / API 没就绪 / 渲染失败）——这时不用等令牌，直接交 */
 const turnstileUnavailable = ref(false)
+
+/** 显式渲染那条路（SPA 转回来）拿到的 widget id，用于 reset / remove */
+let widgetId = ''
 
 function turnstileApi(): TurnstileApi | null {
   const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
@@ -376,7 +406,7 @@ function turnstileContainer(): HTMLElement | null {
   return turnstileEl.value ?? document.querySelector<HTMLElement>('.feedback-form__verify')
 }
 
-/** 脚本只加载一次 */
+/** 脚本只加载一次（模块级变量：SPA 转走再转回来不会重复注入） */
 let scriptPromise: Promise<boolean> | null = null
 
 function loadTurnstileScript(): Promise<boolean> {
@@ -386,6 +416,7 @@ function loadTurnstileScript(): Promise<boolean> {
     script.src = TURNSTILE_SCRIPT
     script.async = true
     script.defer = true
+    script.setAttribute('data-dsh-turnstile', '1')
     script.addEventListener('load', () => resolve(true))
     script.addEventListener('error', () => {
       console.warn('[turnstile] 脚本加载失败（可能被网络挡了）。按设计直接放行。')
@@ -398,7 +429,7 @@ function loadTurnstileScript(): Promise<boolean> {
 
 /**
  * ⚠️ **`script` 的 load 事件不代表 API 可用**：`/turnstile/v0/api.js` 只是个 302
- * 引导，真正的 86 KB 包是它之后自己再拉的（HAR 里这两条是分开的）。
+ * 引导，真正的包是它之后自己再拉的（HAR 里这两条是分开的）。
  * 所以这里轮询等，而不是查一次就走。
  */
 function waitForTurnstileApi(timeoutMs: number): Promise<TurnstileApi | null> {
@@ -432,13 +463,16 @@ async function renderTurnstile() {
   // 等的过程中隐式渲染可能已经处理了
   if (container.childElementCount > 0) return
   try {
-    api.render(container, {
-      sitekey: TURNSTILE_SITE_KEY,
-      action: TURNSTILE_ACTION,
-      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-      size: 'flexible',
-      appearance: 'interaction-only'
-    })
+    // 记下 widget id：令牌作废时要 reset 它，转走时要 remove 它
+    widgetId = String(
+      api.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: TURNSTILE_ACTION,
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+        size: 'flexible',
+        appearance: 'interaction-only'
+      }) || ''
+    )
   } catch (error) {
     turnstileUnavailable.value = true
     console.warn('[turnstile] 渲染失败：' + String(error) + '，按设计直接放行。')
@@ -482,10 +516,11 @@ function readTurnstileToken(): string {
 }
 
 /**
- * 等验证走完（组件可用时）。
+ * 令牌还没到就等一小会儿（组件可用时）。
  *
- * 拿不到令牌也**一定会放行**——等满 10 秒就当组件用不了。一个卡住的验证组件把
- * 用户永远挡在门外，比放进一条没令牌的提交糟得多：那条会被标成可疑，由人复核。
+ * 等满 `TURNSTILE_WAIT_MS` 也**一定会放行**——这条会以「没有令牌」入库并被标成
+ * 可疑，由人复核；而一个卡住的验证组件把人永远挡在门外，比放进一条可疑提交糟得多。
+ * 所以这里刻意等得很短，而且只在客户端知道「组件压根没起来」时完全不等。
  */
 async function waitForTurnstileToken(): Promise<void> {
   if (!TURNSTILE_SITE_KEY || turnstileUnavailable.value) return
@@ -493,18 +528,28 @@ async function waitForTurnstileToken(): Promise<void> {
   message.value = '正在完成人机验证…'
   const deadline = Date.now() + TURNSTILE_WAIT_MS
   while (Date.now() < deadline) {
-    await sleep(250)
+    await sleep(200)
     if (readTurnstileToken()) return
   }
-  console.warn('[turnstile] 等令牌超时，按设计直接放行（这条会被标成可疑）。')
+  console.warn('[turnstile] 等令牌超时，按设计直接放行（服务端会标成可疑）。')
 }
 
-/** 服务端说令牌无效时换一个再来（过期令牌不能重复用） */
+/**
+ * 服务端说令牌无效时换一枚再来。
+ *
+ * 两件事都得做：**清掉表单里那枚作废的令牌**（不然用户再点一次提交，带的还是它，
+ * 再被拒一次），**reset 组件**让它重新跑一遍挑战。令牌是一次性的，这是官方语义。
+ */
 function resetTurnstile() {
+  const input = formEl.value?.querySelector('input[name="cf-turnstile-response"]')
+  if (input) (input as HTMLInputElement).value = ''
   try {
-    turnstileApi()?.reset?.()
+    const api = turnstileApi()
+    if (!api) return
+    if (widgetId) api.reset?.(widgetId)
+    else api.reset?.()
   } catch {
-    // 忽略：下次提交会带旧令牌，服务端再拒一次而已
+    // 忽略：下一次提交会带空令牌，服务端照收并标成可疑，不会拒人
   }
 }
 
@@ -513,6 +558,18 @@ onMounted(() => {
   restoreDraft()
   void initTurnstile()
   void flushPending()
+})
+
+onUnmounted(() => {
+  // SPA 转走时把这个 widget 摘掉。留着的话它会待在 Turnstile 的注册表里，
+  // 下次转回来 reset() 有可能作用在那个已经不在文档里的旧组件上。
+  if (!widgetId) return
+  try {
+    turnstileApi()?.remove?.(widgetId)
+  } catch {
+    // 忽略
+  }
+  widgetId = ''
 })
 </script>
 

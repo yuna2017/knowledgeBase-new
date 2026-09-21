@@ -14,8 +14,8 @@
  *   GET  /api/feedback/lookup?t=XXXX  凭查询码查自己那条的状态（公开，不回显联系方式）
  *   GET  /api/feedback/session       查询当前是否已登录
  *   GET  /api/feedback/list          审计明细（需登录）
- *   POST /api/feedback/update        改状态 / 已上线链接（需登录；**分类不可改**）
- *   POST /api/feedback/delete        删单条，或一次删掉全部可疑条目（需登录）
+ *   POST /api/feedback/update        改状态 / 已上线链接 / 可疑标记（需登录；**分类不可改**）
+ *   POST /api/feedback/delete        删单条，或一次删掉「蜜罐 / 过快」那两类可疑（需登录）
  *
  * 必须在 Pages 项目设置里配置环境变量 `FEEDBACK_ADMIN_PASSWORD`：
  *   - 没配置时，审计接口一律返回 503，提交接口照常工作（不会把自己的后台锁死，
@@ -29,10 +29,11 @@
  *      它们只把条目标成 `suspicious`，不阻止入库。真用户的内容一条都不能丢，
  *      机器人那点垃圾由维护者在审计页一次性批量删掉。
  *   2. **反垃圾不把可用性交出去。** 蜜罐、填写耗时、来源限频三样都是本地可判的。
- *      在此之上接了 Turnstile 机器人验证，但**它只在「令牌明确无效」时才拒**：
- *      拿不到令牌或验证服务连不上，一律照收并标成可疑（见 verifyTurnstile 的表格）。
- *      这样既拿到了验证的强度，又不会重演「Cloudflare 一抖，表单直接不可用」——
- *      而这恰恰是接验证码最容易踩的坑。
+ *      在此之上接了 Turnstile 机器人验证，判断标准就一条——**拿不到有效令牌
+ *      就算没通过**：没有令牌（组件没加载出来 / 被网络挡住）与验证服务连不上，
+ *      都照收并**带上原因**标成可疑，等维护者复核；只有 Cloudflare 明确说令牌
+ *      无效才拒。这样既拿到了验证的强度，又不会重演「Cloudflare 一抖，表单直接
+ *      不可用」——而这恰恰是接验证码最容易踩的坑（见 verifyTurnstile 的表格）。
  *
  * 设计取舍见 docs/feedback-channel-design.md。
  */
@@ -285,10 +286,8 @@ async function ipHash(env, request) {
  */
 let schemaReady = null
 
-function schemaStatements(db) {
-  return [
-    db.prepare(
-      `CREATE TABLE IF NOT EXISTS feedback (
+function feedbackTableSql() {
+  return `CREATE TABLE IF NOT EXISTS feedback (
          id             INTEGER PRIMARY KEY AUTOINCREMENT,
          category       TEXT    NOT NULL,
          kind           TEXT    NOT NULL,
@@ -306,30 +305,112 @@ function schemaStatements(db) {
          updated_at     INTEGER,
          ticket         TEXT
        )`
-    ),
-    db.prepare(
-      'CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC)'
-    ),
-    db.prepare(
-      'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)'
-    ),
+}
+
+/** 三条索引。`idx_feedback_ticket` 引用 ticket 列，**只能建在补列之后** */
+function feedbackIndexSql() {
+  return [
+    'CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)',
     // 查询码唯一。NULL 在 SQLite 里互不相等，所以迁移前的老行留空不会撞。
-    db.prepare(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback (ticket)'
-    ),
-    db.prepare(
-      `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback (ticket)'
+  ]
+}
+
+function loginTableSql() {
+  return `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
          ip           TEXT    PRIMARY KEY,
          fails        INTEGER NOT NULL DEFAULT 0,
          window_start INTEGER NOT NULL
        )`
-    )
-  ]
 }
 
+/** 给测试脚本用的完整定义：5 条 DDL，和 worker/schema.sql 一一对应 */
+function schemaStatements(db) {
+  return [feedbackTableSql(), loginTableSql(), ...feedbackIndexSql()].map((sql) => db.prepare(sql))
+}
+
+/**
+ * 老库缺的列。
+ *
+ * ⚠️ `CREATE TABLE IF NOT EXISTS` 对**已经存在**的表是空操作，**它不会补列**。
+ * 线上那张 feedback 表是早先建的，后来陆续加了 `ticket`（查询码）和
+ * `flag_reason`（可疑原因）——只改 DDL 不 ALTER 的话，INSERT 会报
+ * `no such column: flag_reason`，症状是**所有提交 500、审计页也 500**，
+ * 而 ensureSchema 的报错是被吞掉的，排查时根本看不到「建表失败」。
+ *
+ * 所以启动时按 PRAGMA 逐列比对，缺什么补什么。SQLite 不允许 ADD COLUMN 一个
+ * 「NOT NULL 且没有默认值」的列，所以下面每一条要么可空、要么带默认值。
+ */
+const MIGRATABLE_COLUMNS = [
+  ['category', 'TEXT'],
+  ['kind', 'TEXT'],
+  ['want', 'TEXT'],
+  ['scene', 'TEXT'],
+  ['article', 'TEXT'],
+  ['contact', 'TEXT'],
+  ['status', "TEXT NOT NULL DEFAULT 'new'"],
+  ['resolved_label', 'TEXT'],
+  ['resolved_url', 'TEXT'],
+  ['suspicious', 'INTEGER NOT NULL DEFAULT 0'],
+  ['flag_reason', 'TEXT'],
+  ['ip_hash', 'TEXT'],
+  ['created_at', 'INTEGER'],
+  ['updated_at', 'INTEGER'],
+  ['ticket', 'TEXT']
+]
+
+/** 表里现有的列。读不到就返回 null，调用方退回「逐条试着补」 */
+async function existingColumns(db) {
+  try {
+    const { results } = await db.prepare('PRAGMA table_info(feedback)').all()
+    return new Set((results || []).map((row) => String(row.name)))
+  } catch (error) {
+    console.warn('[feedback] 读 PRAGMA table_info 失败，改为逐条尝试补列', error)
+    return null
+  }
+}
+
+async function addColumn(db, name, type) {
+  try {
+    await db.prepare('ALTER TABLE feedback ADD COLUMN ' + name + ' ' + type).run()
+    console.log('[feedback] 迁移：feedback 补上 ' + name + ' 列')
+    return true
+  } catch (error) {
+    // 列已经在了（重复执行、并发）不是问题；别的错误照抛
+    const message = String(error && error.message ? error.message : error)
+    if (/duplicate column/i.test(message)) return false
+    throw error
+  }
+}
+
+/**
+ * 建表 → 补列 → 建索引。**顺序不能换**：老库上先建 ticket 的唯一索引会直接报
+ * `no such column: ticket`，把整个初始化拖垮。
+ */
+async function bootstrapSchema(db) {
+  await db.prepare(feedbackTableSql()).run()
+  await db.prepare(loginTableSql()).run()
+
+  const existing = await existingColumns(db)
+  for (const [name, type] of MIGRATABLE_COLUMNS) {
+    if (existing && existing.has(name)) continue
+    await addColumn(db, name, type)
+  }
+
+  await db.batch(feedbackIndexSql().map((sql) => db.prepare(sql)))
+}
+
+/**
+ * 一个 isolate 里只跑一次；**失败不缓存**——否则一次偶发的 D1 抖动会让这个
+ * isolate 后面每次请求都跳过建表，错误就沉到「查询报表不存在」里去了。
+ */
 function ensureSchema(env) {
   if (!schemaReady) {
-    schemaReady = env.DB.batch(schemaStatements(env.DB)).catch(() => null)
+    schemaReady = bootstrapSchema(env.DB).catch((error) => {
+      console.error('[feedback] 建表 / 补列失败，下次请求会重试', error)
+      schemaReady = null
+    })
   }
   return schemaReady
 }
@@ -337,30 +418,29 @@ function ensureSchema(env) {
 /* ------------------------------------------------------------------ Turnstile */
 
 /**
- * 机器人验证。
- *
- * 分工是这样的：**「组件加载出来了没有」由客户端判断**（只有它知道），
- * 客户端在组件可用时会等验证走完才提交；组件用不了就直接交。
- * 服务端这边只看令牌：
+ * 机器人验证。**规则只有一条：拿到有效令牌才算通过。**
  *
  * | 状态 | 什么情况 | 怎么办 |
  * | --- | --- | --- |
- * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验 |
- * | `ok` | 验证通过 | 正常入库 |
- * | `missing` | 请求里没有令牌 —— 客户端压根没能渲染出组件 | **照收，不标记** |
- * | `unreachable` | 带了令牌但 siteverify 连不上/超时/`internal-error` | **照收，不标记** |
- * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒** |
+ * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验，走原来的蜜罐 + 耗时 + 限频 |
+ * | `ok` | 令牌有效 | 正常入库，**不计可疑** |
+ * | `missing` | 请求里没有令牌：组件没加载出来 / 被网络挡住 / 脚本压根没跑 | **照收，标可疑 `no_token`** |
+ * | `unreachable` | 带了令牌但 siteverify 连不上/超时/`internal-error` | **照收，标可疑 `verify_down`** |
+ * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒**，这是唯一会拒的情况 |
  *
- * **为什么不给「没有令牌」标可疑**（第一版是标的）：
- * 客户端那边已经把闸门开在「组件可用」上了，所以走到这里还没有令牌，基本只有一个
- * 原因——`challenges.cloudflare.com` 对这个人不可达。要是再标可疑，一旦大陆整片
- * 访问不了，**每一条反馈都会变成可疑**，公开统计全空，而审计页那个「删掉全部可疑」
- * 按钮会一次性删掉所有人的真实反馈。一个误报能把真数据清空，这种标记不能留。
- * 挡垃圾还是靠蜜罐、填写耗时和限频那三样。
+ * 为什么 `missing` 也收而不拒：这个站的表单是**渐进增强**的，脚本没跑起来时读者靠
+ * 原生表单提交，那时候根本不可能有令牌。把「没有令牌」一律当机器人，就等于把这个
+ * 退路废掉了。代价是这批条目会带着原因落进「可疑」——**不进公开统计**，等维护者
+ * 在审计页逐条复核，确认是真人写的就点「标记为正常」，它立刻计入统计。
+ * **宁可让维护者多点一下，也不要让真用户白填。**
  *
  * 为什么 `unreachable` 不拒：siteverify 在 Cloudflare 上，它抖动的时候正是我们
  * 最不希望表单瘫掉的时候。Cloudflare 自己把 `internal-error` 标成「重试即可」，
  * 那就重试——只不过重试之前先把它收下来。
+ *
+ * 「删掉蜜罐与过快」那个批量删除**刻意不碰** `no_token` / `verify_down`：
+ * 这两类的成因很可能是「这个人的网络到不了 Cloudflare」，里面混着真反馈，
+ * 不能跟着脚本垃圾一起清（见 handleDelete）。
  */
 async function verifyTurnstile(env, request, token) {
   const secret = env.TURNSTILE_SECRET_KEY
@@ -466,21 +546,15 @@ async function handleSubmit(context) {
   if (!fields) return fail(400, 'invalid body', '/wanted?error=1')
 
   /*
-   * 以下两种情况只标记可疑、不丢弃：
-   *   - 蜜罐被填：浏览器自动填充有可能命中，真用户不该因此丢稿
-   *   - 填得太快：粘贴一段准备好的文字，三秒交上去很正常
-   * 标记之后由维护者在审计页判断，并有一键「删掉全部可疑」。
-   */
-  /*
    * 四条「可疑」的理由。注意它们**不是一回事**：
    *
-   *   trap        蜜罐被填              ┐ 几乎可以确定是脚本，一键批量删的就是这两类
-   *   fast        填得太快              ┘
+   *   trap        蜜罐被填              ┐ 几乎可以确定是脚本，是「删掉蜜罐与过快」
+   *   fast        填得太快              ┘ 批量清掉的那两类
    *   no_token    请求里没有令牌        ┐ 大概率是这个人的网络到不了 Cloudflare，
    *   verify_down siteverify 不可达     ┘ 里面混着真反馈，**不能跟着一起批量删**
    *
-   * 区分开是为了让「删掉全部可疑」不至于在 Cloudflare 整片不可达时清空真数据。
-   * 维护者看到带理由的标记，可以逐条判断。
+   * 分开记理由，是为了让维护者既能一键清掉脚本垃圾，又不会连真稿子一起清；
+   * 复核时看到某条其实是真人写的，点「标记为正常」它就计入公开统计。
    */
   let suspicious = 0
   let flagReason = ''
@@ -959,5 +1033,5 @@ export async function onRequestPost(context) {
   return json({ error: 'not found' }, 404)
 }
 
-/** 供测试脚本比对「这里和 worker/schema.sql 是不是同一份定义」 */
-export { schemaStatements, CATEGORIES, STATUSES }
+/** 供测试脚本比对「这里和 worker/schema.sql 是不是同一份定义」，并单独测补列迁移 */
+export { schemaStatements, bootstrapSchema, MIGRATABLE_COLUMNS, CATEGORIES, STATUSES }

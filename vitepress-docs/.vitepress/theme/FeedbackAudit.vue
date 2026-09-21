@@ -10,8 +10,9 @@
  * 密码来自环境变量 FEEDBACK_ADMIN_PASSWORD，比较是定长的，
  * 连续失败 5 次锁定 15 分钟。
  *
- * 维护者在这里能做的事：看清每条 → 改分类（分类是聚合的键，选错会让统计错位）
- * → 改状态 → 填「已上线」的标签和链接（会出现在公开状态页）→ 删单条或一键清掉可疑。
+ * 维护者在这里能做的事：看清每条 → 改状态 → 填「已上线」的标签和链接（会出现在公开
+ * 状态页）→ 删单条，或一键清掉「蜜罐 / 过快」那两类；被标可疑的条目可以点
+ * 「标记为正常」把它放回公开统计（分类刻意只读，不改）。
  */
 import { computed, onMounted, ref } from 'vue'
 
@@ -107,6 +108,18 @@ const visible = computed(() => {
     return true
   })
 })
+
+/**
+ * 「没通过人机验证」的条数。它们**不进公开统计**，但很可能只是这个人的网络到不了
+ * Cloudflare —— 也就是真反馈。单独报一个数，免得维护者只看「待看 0 条」就以为没事。
+ */
+const unverifiedCount = computed(
+  () =>
+    items.value.filter(
+      (item) =>
+        item.suspicious && (item.flagReason === 'no_token' || item.flagReason === 'verify_down')
+    ).length
+)
 
 async function request(url: string, init?: RequestInit) {
   const res = await fetch(url, {
@@ -220,10 +233,12 @@ async function saveResolution(item: FeedbackItem) {
       resolvedUrl: item.resolvedUrl
     })
   ) {
-    message.value = item.resolvedUrl
+    // 顺序不能反：load() 会把 message 清空，所以先说 load 再写这句话
+    const text = item.resolvedUrl
       ? '已保存，会显示在公开状态页上。'
       : '已清空这条的公开链接。'
     await load()
+    message.value = text
   }
 }
 
@@ -242,15 +257,27 @@ async function remove(item: FeedbackItem) {
 }
 
 async function removeAllSuspicious() {
-  const count = summary.value?.suspicious ?? 0
-  if (!count) {
+  const total = summary.value?.suspicious ?? 0
+  // 「删掉蜜罐与过快」只清 trap / fast；未验证的那两类要留着逐条看，
+  // 所以确认框里报的是**这次真会删掉的条数**，不是可疑总数
+  const deletable = items.value.filter(
+    (item) => item.suspicious && (item.flagReason === 'trap' || item.flagReason === 'fast')
+  ).length
+  if (!total) {
     message.value = '没有可疑条目。'
+    return
+  }
+  if (!deletable) {
+    message.value =
+      '现在没有「蜜罐 / 填得太快」的可疑条目。剩下 ' + total +
+      ' 条是「未验证 / 验证不可达」，只能逐条复核——确认是真人写的那条，点「标记为正常」。'
     return
   }
   if (
     !window.confirm(
-      '只删「蜜罐」和「填得太快」那两类，共 ' + count + ' 条可疑里的这部分。\n' +
-      '「未验证 / 验证不可达」的不会被删——它们可能只是网络到不了 Cloudflare 的真反馈。\n\n继续？'
+      '删掉 ' + deletable + ' 条「蜜罐 / 填得太快」的可疑反馈？删掉之后无法恢复。\n\n' +
+      '当前 ' + total + ' 条可疑里有 ' + (total - deletable) + ' 条是「未验证 / 验证不可达」，' +
+      '这里不会动它们——那可能只是网络到不了 Cloudflare 的真反馈。'
     )
   ) {
     return
@@ -260,15 +287,16 @@ async function removeAllSuspicious() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ allSuspicious: true })
   })
-  message.value = ok ? '已删除 ' + (data?.deleted ?? 0) + ' 条。' : '删除失败。'
+  const text = ok ? '已删除 ' + (data?.deleted ?? 0) + ' 条。' : '删除失败。'
   await load()
+  message.value = text
 }
 
 /** 复核后认为是真反馈：把可疑标记去掉，它就会计入公开统计 */
 async function markClean(item: FeedbackItem) {
   if (!(await patch(item, { suspicious: false }))) return
-  message.value = '已标记为正常，现在会计入公开统计。'
   await load()
+  message.value = '已标记为正常，现在会计入公开统计。'
 }
 
 /** 数据归属：随时能把筛出来的这部分导成纯文本带走 */
@@ -345,6 +373,13 @@ onMounted(() => {
         </span>
         <span v-if="summary && summary.suspicious" class="fb-audit__suspect-count">
           可疑 {{ summary.suspicious }}
+        </span>
+        <span
+          v-if="unverifiedCount"
+          class="fb-audit__suspect-count"
+          title="没有令牌或验证不可达，不计入公开统计；很可能只是网络到不了 Cloudflare 的真反馈，确认后点「标记为正常」"
+        >
+          其中未验证 {{ unverifiedCount }}
         </span>
         <span class="fb-audit__spacer" />
         <button class="fb-audit__ghost" type="button" @click="load">刷新</button>
