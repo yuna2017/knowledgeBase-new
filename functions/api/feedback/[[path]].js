@@ -336,24 +336,30 @@ function ensureSchema(env) {
 /* ------------------------------------------------------------------ Turnstile */
 
 /**
- * 机器人验证。**返回四种状态，其中三种都不丢数据**，这是刻意的：
+ * 机器人验证。
+ *
+ * 分工是这样的：**「组件加载出来了没有」由客户端判断**（只有它知道），
+ * 客户端在组件可用时会等验证走完才提交；组件用不了就直接交。
+ * 服务端这边只看令牌：
  *
  * | 状态 | 什么情况 | 怎么办 |
  * | --- | --- | --- |
- * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验，走原来的蜜罐 + 耗时 + 限频 |
+ * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验 |
  * | `ok` | 验证通过 | 正常入库 |
- * | `missing` | 请求里根本没有令牌 | **照收，标可疑**——可能是没跑 JS 的真用户 |
- * | `unreachable` | 请求带令牌但 siteverify 连不上/超时/`internal-error` | **照收，标可疑** |
- * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒**，这是唯一会拒的情况 |
+ * | `missing` | 请求里没有令牌 —— 客户端压根没能渲染出组件 | **照收，不标记** |
+ * | `unreachable` | 带了令牌但 siteverify 连不上/超时/`internal-error` | **照收，不标记** |
+ * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒** |
  *
- * 为什么 `missing` 也收：这个站的表单是**渐进增强**的，脚本没跑起来时读者靠原生表单提交，
- * 那时候根本不可能有令牌。把「没有令牌」一律当机器人，就等于把这个退路废掉了。
- * 代价是「不发令牌硬打」的脚本会以可疑条目的形式落库——但它不进公开统计，
- * 维护者在审计页一键就能清掉。**宁可让维护者多点一下，也不要让真用户白填。**
+ * **为什么不给「没有令牌」标可疑**（第一版是标的）：
+ * 客户端那边已经把闸门开在「组件可用」上了，所以走到这里还没有令牌，基本只有一个
+ * 原因——`challenges.cloudflare.com` 对这个人不可达。要是再标可疑，一旦大陆整片
+ * 访问不了，**每一条反馈都会变成可疑**，公开统计全空，而审计页那个「删掉全部可疑」
+ * 按钮会一次性删掉所有人的真实反馈。一个误报能把真数据清空，这种标记不能留。
+ * 挡垃圾还是靠蜜罐、填写耗时和限频那三样。
  *
- * 为什么 `unreachable` 不拒：Turnstile 的 siteverify 在 Cloudflare 上，
- * 它抖动的时候正是我们最不希望表单瘫掉的时候。Cloudflare 自己把
- * `internal-error` 标成「重试即可」，那就重试——只不过重试之前先把它收下来。
+ * 为什么 `unreachable` 不拒：siteverify 在 Cloudflare 上，它抖动的时候正是我们
+ * 最不希望表单瘫掉的时候。Cloudflare 自己把 `internal-error` 标成「重试即可」，
+ * 那就重试——只不过重试之前先把它收下来。
  */
 async function verifyTurnstile(env, request, token) {
   const secret = env.TURNSTILE_SECRET_KEY
@@ -484,11 +490,9 @@ async function handleSubmit(context) {
     return fail(400, 'turnstile rejected the token', '/wanted?error=verify')
   }
   if (verdict.state === 'missing' || verdict.state === 'unreachable') {
-    suspicious = 1
-    console.warn(
-      '[feedback] Turnstile ' + verdict.state +
-      '（' + verdict.detail + '），标记为可疑但不丢弃'
-    )
+    // 只记账不拦人：走到这里基本就是「这个人的网络到不了 Cloudflare」，
+    // 标成可疑会让整批真反馈在审计页里长得像垃圾（见 verifyTurnstile 的说明）
+    console.warn('[feedback] Turnstile ' + verdict.state + '（' + verdict.detail + '），照收')
   }
 
   const category = clean(fields.category, 32)

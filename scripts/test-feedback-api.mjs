@@ -671,14 +671,17 @@ test('令牌是别的 action 签的：当成无效拒掉', async () => {
   }
 })
 
-test('没有令牌：照收但标可疑（可能是没跑 JS 的真用户）', async () => {
+test('没有令牌：照收，且**不标可疑**', async () => {
   const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
   assert.equal(res.status, 200, '不能因为没令牌就拒')
   assert.equal(count('feedback'), 1, '更不能丢')
-  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+  // 客户端那边已经把闸门开在「组件可用」上了，这里还没有令牌基本只有一个原因：
+  // 这个人的网络到不了 challenges.cloudflare.com。标可疑的话，一旦整片不可达，
+  // 每条真反馈都会长得像垃圾，而「删掉全部可疑」会一次清空它们。
+  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
 })
 
-test('siteverify 连不上：照收但标可疑，验证服务挂了不能把表单拖死', async () => {
+test('siteverify 连不上：照收且不标可疑，验证服务挂了不能把表单拖死', async () => {
   const restore = stubSiteverify(async () => {
     throw new TypeError('network error')
   })
@@ -686,13 +689,13 @@ test('siteverify 连不上：照收但标可疑，验证服务挂了不能把表
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
     assert.equal(count('feedback'), 1)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
   } finally {
     restore()
   }
 })
 
-test('siteverify 超时（AbortError）：同样降级为可疑而不是拒', async () => {
+test('siteverify 超时（AbortError）：照收且不标可疑，也不拒', async () => {
   const restore = stubSiteverify(async () => {
     const error = new Error('aborted')
     error.name = 'AbortError'
@@ -701,31 +704,31 @@ test('siteverify 超时（AbortError）：同样降级为可疑而不是拒', as
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
   } finally {
     restore()
   }
 })
 
-test('siteverify 返回 internal-error：算服务不可用，不算令牌无效', async () => {
+test('siteverify 返回 internal-error：算服务不可用，照收且不标可疑', async () => {
   const restore = stubSiteverify(async () => siteverifyJson({
     success: false, 'error-codes': ['internal-error']
   }))
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200, 'internal-error 不该拒用户')
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
   } finally {
     restore()
   }
 })
 
-test('siteverify 返回 5xx：同样降级', async () => {
+test('siteverify 返回 5xx：照收且不标可疑', async () => {
   const restore = stubSiteverify(async () => new Response('boom', { status: 502 }))
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
   } finally {
     restore()
   }
@@ -772,6 +775,19 @@ test('提交接口会返回查询码，前端也必须把它带去完成页', ()
   // 只判断 res.ok 就把响应体扔掉的话，用户拿不到编号、查不了自己那条
   assert.ok(form.includes("'/wanted-done?t='"), '前端跳转没带上查询码')
   assert.ok(form.includes('data.ticket'), '前端没从响应体里读查询码')
+})
+
+test('闸门在客户端：组件可用就先等验证走完，用不了直接放行', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  // 只有客户端知道组件加载出来没有，服务端只能看到有没有令牌
+  assert.ok(form.includes('waitForTurnstile'), '缺少「等验证走完」的逻辑')
+  assert.ok(form.includes("'pending'"), '缺少等待状态')
+  assert.ok(form.includes("'failed'"), '缺少「组件用不了」的状态')
+  // 等不到也一定要放行，不能把人永远挡在门外
+  assert.ok(form.includes('TURNSTILE_WAIT_MS'), '缺少等待上限')
 })
 
 test('TURNSTILE_ACTION 前后端一致', () => {

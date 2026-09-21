@@ -42,6 +42,11 @@ const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
 
 const formEl = ref<HTMLFormElement | null>(null)
 const turnstileEl = ref<HTMLElement | null>(null)
+/**
+ * 验证组件的状态，决定「提交要不要等验证走完」（见下面 mountTurnstile 的说明）。
+ * 没配 site key 时是 off，永远不会拦人。
+ */
+const turnstileState = ref<TurnstileState>(TURNSTILE_SITE_KEY ? 'pending' : 'off')
 
 const category = ref('')
 const kind = ref('gap')
@@ -146,9 +151,12 @@ function savePending(payload: unknown) {
 /* ------------------------------------------------------------ 提交 */
 
 /** 单次请求。返回 'ok' / 'error'，error 时带上可读原因。 */
-async function postOnce(
-  payload: Record<string, unknown>
-): Promise<{ ok: boolean; reason: string; ticket: string }> {
+async function postOnce(payload: Record<string, unknown>): Promise<{
+  ok: boolean
+  reason: string
+  ticket: string
+  tokenRejected: boolean
+}> {
   try {
     const res = await fetch('/api/feedback', {
       method: 'POST',
@@ -163,20 +171,26 @@ async function postOnce(
       // 用户拿不到编号就查不了自己那条，这个功能等于没做
       const data = await res.json().catch(() => null)
       const ticket = data && typeof data.ticket === 'string' ? data.ticket : ''
-      return { ok: true, reason: '', ticket }
+      return { ok: true, reason: '', ticket, tokenRejected: false }
     }
     if (res.status === 429) {
-      return { ok: false, reason: '提交太频繁了，请过一会儿再试', ticket: '' }
+      return { ok: false, reason: '提交太频繁了，请过一会儿再试', ticket: '', tokenRejected: false }
     }
     const data = await res.json().catch(() => null)
     const detail = data && typeof data.error === 'string' ? data.error : ''
     return {
       ok: false,
       reason: detail ? detail + '（' + res.status + '）' : '接口返回 ' + res.status,
-      ticket: ''
+      ticket: '',
+      tokenRejected: detail.indexOf('turnstile') >= 0
     }
   } catch {
-    return { ok: false, reason: '请求没有发出去，可能是网络或接口暂时不可用', ticket: '' }
+    return {
+      ok: false,
+      reason: '请求没有发出去，可能是网络或接口暂时不可用',
+      ticket: '',
+      tokenRejected: false
+    }
   }
 }
 
@@ -199,6 +213,15 @@ async function send(payload: Record<string, unknown>) {
       window.location.assign(target)
       return
     }
+
+    // 令牌无效（多半是放了一会儿过期了）：换一个新的，让用户再点一次就行
+    if (result.tokenRejected) {
+      sending.value = false
+      canFallback.value = true
+      resetTurnstile()
+      message.value = '人机验证过期了，已经换了一个新的，麻烦再点一次提交。'
+      return
+    }
     reason = result.reason
     // 频率限制重试没有意义，直接退出
     if (reason.indexOf('太频繁') >= 0) break
@@ -213,13 +236,28 @@ async function send(payload: Record<string, unknown>) {
     '可以点「重试」，或者点「复制内容」粘贴到 QQ 群。'
 }
 
-async function onSubmit(event: SubmitEvent) {
-  event.preventDefault()
+/**
+ * 提交。**组件能用就要求先把验证走完**；组件用不了就什么都不管，直接交。
+ *
+ * 闸门必须在客户端：只有这里知道组件到底加载出来了没有。服务端只能看到
+ * 「有没有令牌」，分不清「组件没加载」和「机器人压根没发」。
+ */
+async function submitWithVerification() {
+  if (sending.value) return
+  if (turnstileState.value === 'pending') {
+    message.value = '正在完成人机验证…'
+    await waitForTurnstile()
+  }
   await send(collect())
 }
 
+async function onSubmit(event: SubmitEvent) {
+  event.preventDefault()
+  await submitWithVerification()
+}
+
 function retry() {
-  void send(collect())
+  void submitWithVerification()
 }
 
 /* ------------------------------------------------------------ 复制兜底 */
@@ -333,8 +371,25 @@ const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?
 interface TurnstileApi {
   render: (el: HTMLElement, options: Record<string, unknown>) => string
   remove?: (id: string) => void
+  reset?: (id: string) => void
   ready?: (cb: () => void) => void
 }
+
+/**
+ * 验证组件的状态，它决定「提交要不要等验证走完」：
+ *
+ *   off     没配 site key —— 全站不管验证
+ *   pending 已经渲染，等令牌
+ *   ready   拿到令牌了
+ *   failed  脚本/渲染没成，或者等超时了
+ *
+ * **闸门开在客户端**，因为只有客户端知道组件到底加载出来了没有。
+ * 服务端没法分辨「组件没加载」和「机器人压根没发请求」——它只能看到有没有令牌。
+ */
+type TurnstileState = 'off' | 'pending' | 'ready' | 'failed'
+
+/** 等令牌的上限。等到头就放行——卡住的组件不该把人永远挡在门外 */
+const TURNSTILE_WAIT_MS = 10000
 
 /** 脚本只加载一次；存 promise 是为了并发调用不会插两个 script */
 let scriptPromise: Promise<boolean> | null = null
@@ -350,8 +405,7 @@ function loadTurnstileScript(): Promise<boolean> {
     script.addEventListener('load', () => resolve(true))
     script.addEventListener('error', () => {
       console.warn(
-        '[turnstile] 脚本加载失败（可能被网络挡了）。提交不受影响，' +
-        '这条会被标成可疑，在 /wanted-audit 里能看到。'
+        '[turnstile] 脚本加载失败（可能被网络挡了）。按设计直接放行，不拦提交。'
       )
       resolve(false)
     })
@@ -363,11 +417,20 @@ function loadTurnstileScript(): Promise<boolean> {
 async function mountTurnstile() {
   if (!TURNSTILE_SITE_KEY) return
   const container = turnstileEl.value
-  if (!container) return
-  if (!(await loadTurnstileScript())) return
+  if (!container) {
+    turnstileState.value = 'failed'
+    return
+  }
+  if (!(await loadTurnstileScript())) {
+    turnstileState.value = 'failed'
+    return
+  }
 
   const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
-  if (!api || typeof api.render !== 'function') return
+  if (!api || typeof api.render !== 'function') {
+    turnstileState.value = 'failed'
+    return
+  }
 
   const start = () => {
     // 重新挂载（SPA 转回来）时先把上一个清掉，否则容器里会叠两个
@@ -388,20 +451,71 @@ async function mountTurnstile() {
         size: 'flexible',
         // 正常读者看不到它，只有 Turnstile 判定需要交互时才出现
         appearance: 'interaction-only',
+        callback: () => {
+          // 令牌到手，隐藏 input 也已经被塞进表单了
+          turnstileState.value = 'ready'
+        },
         'error-callback': (code: string) => {
-          console.warn(
-            '[turnstile] 挑战失败：' + code + '。提交不受影响，这条会被标成可疑。'
-          )
+          turnstileState.value = 'failed'
+          console.warn('[turnstile] 挑战失败：' + code + '，按设计直接放行。')
+        },
+        // 令牌过期会自动换新的，退回去接着等；等不到就按超时放行
+        'expired-callback': () => {
+          turnstileState.value = 'pending'
+        },
+        'timeout-callback': () => {
+          turnstileState.value = 'pending'
         }
       })
     } catch (error) {
-      console.warn('[turnstile] 渲染失败：' + String(error))
+      turnstileState.value = 'failed'
+      console.warn('[turnstile] 渲染失败：' + String(error) + '，按设计直接放行。')
     }
   }
 
   // 脚本 load 之后 API 未必已经就绪，官方的 ready() 才是等的正确姿势
   if (typeof api.ready === 'function') api.ready(start)
   else start()
+}
+
+/**
+ * 等验证走完。
+ *
+ * 正常情况一两秒就 ready；**等不到也一定会放行**——一个卡住的验证组件
+ * 把用户永远挡在门外，比放进一条可疑提交糟得多。等超时就当它 failed。
+ */
+function waitForTurnstile(): Promise<void> {
+  if (turnstileState.value !== 'pending') return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const deadline = Date.now() + TURNSTILE_WAIT_MS
+    const tick = () => {
+      if (turnstileState.value !== 'pending') {
+        resolve()
+        return
+      }
+      if (Date.now() >= deadline) {
+        turnstileState.value = 'failed'
+        console.warn('[turnstile] 等令牌超时，按设计直接放行。')
+        resolve()
+        return
+      }
+      window.setTimeout(tick, 250)
+    }
+    tick()
+  })
+}
+
+/** 服务端说令牌无效时，换一个再来（过期的令牌不能重复用） */
+function resetTurnstile() {
+  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
+  if (widgetId !== null && api && typeof api.reset === 'function') {
+    try {
+      api.reset(widgetId)
+      turnstileState.value = 'pending'
+    } catch {
+      // 忽略：下次提交会带旧令牌，服务端再拒一次而已
+    }
+  }
 }
 
 onBeforeUnmount(() => {
