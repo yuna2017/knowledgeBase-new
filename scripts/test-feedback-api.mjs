@@ -481,6 +481,180 @@ test('统计按分类聚合，状态分列', async () => {
   assert.equal(stats.byCategory[0].byStatus.new, 2)
 })
 
+/* ------------------------------------------------------------------ 机器人验证 */
+
+/**
+ * 把 siteverify 的响应换成我们指定的。返回一个还原函数。
+ * 只拦 siteverify，别的 fetch 原样放行。
+ */
+function stubSiteverify(impl) {
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    if (String(url).indexOf('siteverify') >= 0) return impl(url, init)
+    return original(url, init)
+  }
+  return () => {
+    globalThis.fetch = original
+  }
+}
+
+const siteverifyJson = (body, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  })
+
+const TURNSTILE_ENV = { TURNSTILE_SECRET_KEY: 'test-secret' }
+const TOKEN = { ...VALID, 'cf-turnstile-response': 'token-abc' }
+
+test('没配 secret：功能关闭，带不带令牌都正常入库', async () => {
+  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
+  assert.equal(res.status, 200)
+  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+})
+
+test('验证通过：正常入库，不可疑', async () => {
+  const restore = stubSiteverify(async () => siteverifyJson({
+    success: true, hostname: 'docs.yuna.team', action: 'feedback'
+  }))
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 200)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+  } finally {
+    restore()
+  }
+})
+
+test('令牌无效：这是唯一会拒的情况，且不写库', async () => {
+  const restore = stubSiteverify(async () => siteverifyJson({
+    success: false, 'error-codes': ['invalid-input-response']
+  }))
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 400)
+    assert.equal(count('feedback'), 0)
+  } finally {
+    restore()
+  }
+})
+
+test('令牌是别的 action 签的：当成无效拒掉', async () => {
+  const restore = stubSiteverify(async () => siteverifyJson({
+    success: true, hostname: 'docs.yuna.team', action: 'login'
+  }))
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 400)
+    assert.equal(count('feedback'), 0)
+  } finally {
+    restore()
+  }
+})
+
+test('没有令牌：照收但标可疑（可能是没跑 JS 的真用户）', async () => {
+  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
+  assert.equal(res.status, 200, '不能因为没令牌就拒')
+  assert.equal(count('feedback'), 1, '更不能丢')
+  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+})
+
+test('siteverify 连不上：照收但标可疑，验证服务挂了不能把表单拖死', async () => {
+  const restore = stubSiteverify(async () => {
+    throw new TypeError('network error')
+  })
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 200)
+    assert.equal(count('feedback'), 1)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+  } finally {
+    restore()
+  }
+})
+
+test('siteverify 超时（AbortError）：同样降级为可疑而不是拒', async () => {
+  const restore = stubSiteverify(async () => {
+    const error = new Error('aborted')
+    error.name = 'AbortError'
+    throw error
+  })
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 200)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+  } finally {
+    restore()
+  }
+})
+
+test('siteverify 返回 internal-error：算服务不可用，不算令牌无效', async () => {
+  const restore = stubSiteverify(async () => siteverifyJson({
+    success: false, 'error-codes': ['internal-error']
+  }))
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 200, 'internal-error 不该拒用户')
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+  } finally {
+    restore()
+  }
+})
+
+test('siteverify 返回 5xx：同样降级', async () => {
+  const restore = stubSiteverify(async () => new Response('boom', { status: 502 }))
+  try {
+    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
+    assert.equal(res.status, 200)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
+  } finally {
+    restore()
+  }
+})
+
+test('原生表单路径 + 令牌无效：跳 /wanted?error=verify', async () => {
+  const restore = stubSiteverify(async () => siteverifyJson({
+    success: false, 'error-codes': ['timeout-or-duplicate']
+  }))
+  try {
+    const body = new URLSearchParams({
+      category: '一卡通', kind: 'gap', want: 'x', scene: 'y',
+      'cf-turnstile-response': 'used-token'
+    })
+    const res = await onRequestPost(ctx(
+      new Request(BASE + '/api/feedback', { method: 'POST', body }),
+      TURNSTILE_ENV
+    ))
+    assert.equal(res.status, 303)
+    assert.ok((res.headers.get('Location') || '').indexOf('/wanted?error=verify') >= 0)
+  } finally {
+    restore()
+  }
+})
+
+test('令牌字段名前后端一致', () => {
+  const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  // Turnstile 自己塞的隐藏 input 默认就叫这个名字，两边都得用同一个
+  assert.ok(api.includes("'cf-turnstile-response'"), '接口没读这个字段')
+  assert.ok(form.includes('cf-turnstile-response'), '表单没带上这个字段')
+})
+
+test('TURNSTILE_ACTION 前后端一致', () => {
+  const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
+  const shared = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/shared/turnstile.ts'),
+    'utf8'
+  )
+  const fromApi = api.match(/const TURNSTILE_ACTION = '([^']+)'/)
+  const fromShared = shared.match(/export const TURNSTILE_ACTION = '([^']+)'/)
+  assert.ok(fromApi && fromShared, '两边都要有 TURNSTILE_ACTION')
+  assert.equal(fromShared[1], fromApi[1], 'action 对不上会导致所有令牌被判无效')
+})
+
 /* ------------------------------------------------------------------ 路由 */
 
 test('未知路径 404', async () => {

@@ -27,9 +27,11 @@
  *      （浏览器自动填充会填蜜罐字段；粘贴一段准备好的文字三秒就能交），所以
  *      它们只把条目标成 `suspicious`，不阻止入库。真用户的内容一条都不能丢，
  *      机器人那点垃圾由维护者在审计页一次性批量删掉。
- *   2. **反垃圾不引入外部依赖。** 刻意不用 Turnstile：它会给提交路径再加两个
- *      Cloudflare 依赖，而且与要规避的故障是相关的（Cloudflare 抖动时验证和
- *      接口一起挂）。只有蜜罐 + 耗时 + 限频三样，全都本地可判。
+ *   2. **反垃圾不把可用性交出去。** 蜜罐、填写耗时、来源限频三样都是本地可判的。
+ *      在此之上接了 Turnstile 机器人验证，但**它只在「令牌明确无效」时才拒**：
+ *      拿不到令牌或验证服务连不上，一律照收并标成可疑（见 verifyTurnstile 的表格）。
+ *      这样既拿到了验证的强度，又不会重演「Cloudflare 一抖，表单直接不可用」——
+ *      而这恰恰是接验证码最容易踩的坑。
  *
  * 设计取舍见 docs/feedback-channel-design.md。
  */
@@ -55,6 +57,13 @@ const ARTICLE_MAX = 200
 const CONTACT_MAX = 200
 const LABEL_MAX = 80
 const URL_MAX = 300
+/** Turnstile 令牌上限（官方给的硬上限） */
+const TOKEN_MAX = 2048
+/** siteverify 的等待上限，超时就当「验证服务不可用」降级，不能把提交挂死 */
+const VERIFY_TIMEOUT_MS = 5000
+/** 与前端 data-action 对应，用来确认这个令牌是给这张表单的 */
+const TURNSTILE_ACTION = 'feedback'
+const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
 /** 短于这个时长提交，只标记为可疑，不丢（见文件头第 1 条原则） */
 const MIN_FILL_MS = 3000
@@ -281,6 +290,77 @@ function ensureSchema(env) {
   return schemaReady
 }
 
+/* ------------------------------------------------------------------ Turnstile */
+
+/**
+ * 机器人验证。**返回四种状态，其中三种都不丢数据**，这是刻意的：
+ *
+ * | 状态 | 什么情况 | 怎么办 |
+ * | --- | --- | --- |
+ * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验，走原来的蜜罐 + 耗时 + 限频 |
+ * | `ok` | 验证通过 | 正常入库 |
+ * | `missing` | 请求里根本没有令牌 | **照收，标可疑**——可能是没跑 JS 的真用户 |
+ * | `unreachable` | 请求带令牌但 siteverify 连不上/超时/`internal-error` | **照收，标可疑** |
+ * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒**，这是唯一会拒的情况 |
+ *
+ * 为什么 `missing` 也收：这个站的表单是**渐进增强**的，脚本没跑起来时读者靠原生表单提交，
+ * 那时候根本不可能有令牌。把「没有令牌」一律当机器人，就等于把这个退路废掉了。
+ * 代价是「不发令牌硬打」的脚本会以可疑条目的形式落库——但它不进公开统计，
+ * 维护者在审计页一键就能清掉。**宁可让维护者多点一下，也不要让真用户白填。**
+ *
+ * 为什么 `unreachable` 不拒：Turnstile 的 siteverify 在 Cloudflare 上，
+ * 它抖动的时候正是我们最不希望表单瘫掉的时候。Cloudflare 自己把
+ * `internal-error` 标成「重试即可」，那就重试——只不过重试之前先把它收下来。
+ */
+async function verifyTurnstile(env, request, token) {
+  const secret = env.TURNSTILE_SECRET_KEY
+  if (typeof secret !== 'string' || secret.length === 0) return { state: 'off' }
+  if (!token) return { state: 'missing' }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS)
+  try {
+    const res = await fetch(SITEVERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret,
+        response: token,
+        remoteip: clientIp(request)
+      }),
+      signal: controller.signal
+    })
+
+    if (!res.ok) return { state: 'unreachable', detail: 'HTTP ' + res.status }
+
+    const data = await res.json().catch(() => null)
+    if (!data || typeof data !== 'object') {
+      return { state: 'unreachable', detail: 'unparsable body' }
+    }
+
+    const codes = Array.isArray(data['error-codes']) ? data['error-codes'] : []
+
+    if (data.success === true) {
+      // 令牌是给指定 action 签的；不匹配说明是别的表单的令牌被拿来重放
+      if (data.action && data.action !== TURNSTILE_ACTION) {
+        return { state: 'invalid', detail: 'action mismatch: ' + data.action }
+      }
+      return { state: 'ok', hostname: String(data.hostname || '') }
+    }
+
+    // internal-error 是 Cloudflare 自己的问题，不是用户的，按不可用处理
+    if (codes.includes('internal-error')) {
+      return { state: 'unreachable', detail: 'internal-error' }
+    }
+    return { state: 'invalid', detail: codes.join(',') || 'rejected' }
+  } catch (error) {
+    const reason = error && error.name === 'AbortError' ? 'timeout' : String(error)
+    return { state: 'unreachable', detail: reason }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /* ------------------------------------------------------------------ 提交 */
 
 function clean(value, max) {
@@ -349,6 +429,21 @@ async function handleSubmit(context) {
   if (Number.isFinite(elapsed) && elapsed > 0 && elapsed < MIN_FILL_MS) {
     suspicious = 1
     console.warn('[feedback] 提交耗时 ' + elapsed + 'ms，标记为可疑但不丢弃')
+  }
+
+  // 机器人验证（见 verifyTurnstile 的表格）：只有「令牌明确无效」才拒
+  const token = clean(fields['cf-turnstile-response'], TOKEN_MAX)
+  const verdict = await verifyTurnstile(env, request, token)
+  if (verdict.state === 'invalid') {
+    console.warn('[feedback] Turnstile 判定令牌无效：' + verdict.detail)
+    return fail(400, 'turnstile rejected the token', '/wanted?error=verify')
+  }
+  if (verdict.state === 'missing' || verdict.state === 'unreachable') {
+    suspicious = 1
+    console.warn(
+      '[feedback] Turnstile ' + verdict.state +
+      '（' + verdict.detail + '），标记为可疑但不丢弃'
+    )
   }
 
   const category = clean(fields.category, 32)

@@ -17,6 +17,7 @@
  *    浏览器自动填充有可能命中，真用户不该因此白填。
  */
 import { onMounted, ref } from 'vue'
+import { TURNSTILE_ACTION, TURNSTILE_SITE_KEY } from '../shared/turnstile'
 
 const CATEGORIES = [
   '校园网',
@@ -40,6 +41,9 @@ const QQ_GROUP_NUMBER = '978801324'
 const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
 
 const formEl = ref<HTMLFormElement | null>(null)
+const turnstileEl = ref<HTMLElement | null>(null)
+/** 验证组件没加载出来时给一句解释——大陆访问 challenges.cloudflare.com 不一定稳 */
+const turnstileStuck = ref(false)
 
 const category = ref('')
 const kind = ref('gap')
@@ -61,6 +65,11 @@ const KIND_LABEL: Record<string, string> = {
 }
 
 function collect() {
+  const form = formEl.value
+  // Turnstile 用隐式渲染时，它自己会往表单里塞一个隐藏 input，直接读出来就行
+  const turnstileToken = form
+    ? String(new FormData(form).get('cf-turnstile-response') || '')
+    : ''
   return {
     category: category.value,
     kind: kind.value,
@@ -69,6 +78,7 @@ function collect() {
     article: article.value,
     contact: contact.value,
     fb_trap: trap.value,
+    'cf-turnstile-response': turnstileToken,
     elapsed: Date.now() - startedAt
   }
 }
@@ -280,9 +290,51 @@ async function flushPending() {
   savePending(payload)
 }
 
+/* ------------------------------------------------------------ 机器人验证 */
+
+/**
+ * 加载 Turnstile。没配 site key 就什么都不做——页面不引入任何第三方脚本。
+ *
+ * 用隐式渲染（脚本自己扫 `.cf-turnstile` 并往表单里塞隐藏 input），
+ * 所以这段代码只负责注入脚本和设主题，令牌不用自己接管。
+ *
+ * 注意这是**尽力而为**：脚本被网络挡掉（大陆访问 challenges.cloudflare.com
+ * 不一定稳）时验证组件不会出现，但表单照样能提交——服务端拿不到令牌只会
+ * 把它标成可疑，不会拒。所以这里不重试、不阻塞，只给用户一句解释。
+ */
+function loadTurnstile() {
+  if (!TURNSTILE_SITE_KEY) return
+  if (document.querySelector('script[data-dsh-turnstile]')) return
+
+  const container = turnstileEl.value
+  // 站点自己的深浅色是手动切 class，不是系统偏好，所以显式告诉它用哪套
+  if (container) {
+    container.setAttribute(
+      'data-theme',
+      document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+    )
+  }
+
+  const script = document.createElement('script')
+  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
+  script.async = true
+  script.defer = true
+  script.setAttribute('data-dsh-turnstile', '1')
+  script.addEventListener('error', () => {
+    turnstileStuck.value = true
+  })
+  document.head.appendChild(script)
+
+  // 兜底判断：给足时间还没渲染出 iframe，就当它没加载出来
+  window.setTimeout(() => {
+    if (!container || !container.querySelector('iframe')) turnstileStuck.value = true
+  }, 8000)
+}
+
 onMounted(() => {
   startedAt = Date.now()
   restoreDraft()
+  loadTurnstile()
   void flushPending()
 })
 </script>
@@ -393,6 +445,25 @@ onMounted(() => {
     <!-- 蜜罐：对用户隐藏，脚本会填。字段名刻意取成自动填充认不出来的样子 -->
     <div class="feedback-form__trap" aria-hidden="true">
       <input v-model="trap" name="fb_trap" type="text" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <!--
+      机器人验证。site key 为空时整块不渲染，也就不加载任何第三方脚本；
+      用 interaction-only：正常读者根本看不到它，只有被判定可疑的才出现交互。
+    -->
+    <div v-if="TURNSTILE_SITE_KEY" class="feedback-form__verify">
+      <div
+        ref="turnstileEl"
+        class="cf-turnstile"
+        :data-sitekey="TURNSTILE_SITE_KEY"
+        :data-action="TURNSTILE_ACTION"
+        data-size="flexible"
+        data-appearance="interaction-only"
+        data-theme="auto"
+      />
+      <p v-if="turnstileStuck" class="feedback-form__hint feedback-form__hint--block">
+        验证组件没能加载出来。<strong>不影响提交</strong>——直接交就行，我们会人工过一遍。
+      </p>
     </div>
 
     <div class="feedback-form__actions">

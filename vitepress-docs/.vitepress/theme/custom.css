@@ -948,6 +948,20 @@ a.home-card:hover {
   color: var(--vp-c-text-3);
 }
 
+/* 单独成段的提示：不要那个左侧缩进 */
+.feedback-form__hint--block {
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+
+/*
+ * Turnstile 容器。用 interaction-only，正常读者看不到它，
+ * 所以这里留一点空间但不画框——不加载时不该在表单里留一个空盒子。
+ */
+.feedback-form__verify {
+  margin: 0 0 18px;
+}
+
 .feedback-form__control {
   width: 100%;
   padding: 8px 12px;
