@@ -78,6 +78,8 @@ const ARTICLE_MAX = 200
 const CONTACT_MAX = 200
 const LABEL_MAX = 80
 const URL_MAX = 300
+/** 「不采纳」的原因上限。提交者凭编号能看到，所以别写太长 */
+const REJECT_MAX = 200
 /** Turnstile 令牌上限（官方给的硬上限） */
 const TOKEN_MAX = 2048
 /** siteverify 的等待上限，超时就当「验证服务不可用」降级，不能把提交挂死 */
@@ -305,6 +307,7 @@ function feedbackTableSql() {
          status         TEXT    NOT NULL DEFAULT 'new',
          resolved_label TEXT,
          resolved_url   TEXT,
+         reject_reason  TEXT,
          suspicious     INTEGER NOT NULL DEFAULT 0,
          flag_reason    TEXT,
          ip_hash        TEXT,
@@ -359,6 +362,7 @@ const MIGRATABLE_COLUMNS = [
   ['status', "TEXT NOT NULL DEFAULT 'new'"],
   ['resolved_label', 'TEXT'],
   ['resolved_url', 'TEXT'],
+  ['reject_reason', 'TEXT'],
   ['suspicious', 'INTEGER NOT NULL DEFAULT 0'],
   ['flag_reason', 'TEXT'],
   ['ip_hash', 'TEXT'],
@@ -800,7 +804,7 @@ async function handleLookup(request, env) {
   await ensureSchema(env)
   const row = await env.DB.prepare(
     `SELECT ticket, category, kind, want, status,
-            resolved_label, resolved_url, created_at, updated_at
+            resolved_label, resolved_url, reject_reason, created_at, updated_at
        FROM feedback WHERE ticket = ?`
   )
     .bind(ticket)
@@ -824,7 +828,10 @@ async function handleLookup(request, env) {
       updatedAtText: row.updated_at ? utc8Stamp(Number(row.updated_at)) : '',
       resolved: row.resolved_url
         ? { label: row.resolved_label || row.category, url: row.resolved_url }
-        : null
+        : null,
+      // 「不采纳」的原因原样返回；「维护者没写」的兜底文案放在页面上
+      // （只有那里知道 QQ 群号，见 FeedbackLookup.vue）
+      rejectReason: row.reject_reason || ''
     },
     200
   )
@@ -913,7 +920,8 @@ async function handleList(request, env) {
 
   const { results } = await env.DB.prepare(
     `SELECT id, ticket, category, kind, want, scene, article, contact, status,
-            resolved_label, resolved_url, suspicious, flag_reason, created_at, updated_at
+            resolved_label, resolved_url, reject_reason, suspicious, flag_reason,
+            created_at, updated_at
        FROM feedback` + where +
     ' ORDER BY suspicious ASC, created_at DESC LIMIT ? OFFSET ?'
   )
@@ -932,6 +940,7 @@ async function handleList(request, env) {
     status: row.status,
     resolvedLabel: row.resolved_label || '',
     resolvedUrl: row.resolved_url || '',
+    rejectReason: row.reject_reason || '',
     suspicious: Number(row.suspicious) === 1,
     flagReason: row.flag_reason || '',
     createdAt: Number(row.created_at),
@@ -1022,6 +1031,10 @@ async function handleUpdate(context) {
     if (body.status !== 'done') {
       sets.push('resolved_label = NULL', 'resolved_url = NULL')
     }
+    // 「不采纳」退回别的状态时，原因也清掉（同一次请求里给了新原因就听新的）
+    if (body.status !== 'rejected' && body.rejectReason === undefined) {
+      sets.push('reject_reason = NULL')
+    }
   }
   if (body.resolvedLabel !== undefined) {
     sets.push('resolved_label = ?')
@@ -1034,6 +1047,15 @@ async function handleUpdate(context) {
     }
     sets.push('resolved_url = ?')
     values.push(url || null)
+  }
+  /*
+   * 「不采纳」的原因。空字符串 = 清掉，此时提交者看到的是页面上的兜底说明
+   * （见 FeedbackLookup.vue），不是一片空白。
+   * 和「已上线」的标签/链接一样，只由维护者填，提交者凭编号能看到。
+   */
+  if (body.rejectReason !== undefined) {
+    sets.push('reject_reason = ?')
+    values.push(clean(body.rejectReason, REJECT_MAX) || null)
   }
   /*
    * 标记为正常 / 可疑。

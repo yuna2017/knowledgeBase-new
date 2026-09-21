@@ -138,6 +138,9 @@ function printDetail(items) {
     console.log('    场景：' + String(item.scene).replace(/\n+/g, ' / '))
     if (item.article) console.log('    针对：' + item.article)
     if (item.contact) console.log('    联系：' + item.contact)
+    if (item.status === 'rejected') {
+      console.log('    不采纳：' + (item.reject_reason || '（没写原因，提交者看到的是兜底说明）'))
+    }
     if (item.resolved_url) {
       console.log('    已上线：' + (item.resolved_label || '(无标签)') + ' → ' + item.resolved_url)
     }
@@ -228,7 +231,7 @@ async function main() {
     printDetail(
       await query(
         `SELECT id, category, kind, want, scene, article, contact, status,
-                resolved_label, resolved_url, suspicious, flag_reason, created_at
+                resolved_label, resolved_url, reject_reason, suspicious, flag_reason, created_at
            FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT 200`
       )
     )

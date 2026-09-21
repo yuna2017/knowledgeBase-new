@@ -28,6 +28,8 @@ interface FeedbackItem {
   status: string
   resolvedLabel: string
   resolvedUrl: string
+  /** 不采纳的原因（只有 rejected 时可能有值） */
+  rejectReason: string
   suspicious: boolean
   flagReason: string
   createdAt: number
@@ -281,6 +283,16 @@ async function saveResolution(item: FeedbackItem) {
   }
 }
 
+/** 「不采纳」的原因：提交者凭编号能看到。留空就清掉，那边会显示兜底说明 */
+async function saveRejectReason(item: FeedbackItem) {
+  if (!(await patch(item, { rejectReason: item.rejectReason }))) return
+  const saved = item.rejectReason.trim().length > 0
+  await load()
+  message.value = saved
+    ? '已保存不采纳的原因，提交者凭编号能看到。'
+    : '已清空原因；提交者看到的是兜底说明，不是空白。'
+}
+
 async function remove(item: FeedbackItem) {
   if (!window.confirm('删除第 ' + item.id + ' 条？删掉之后无法恢复。')) return
   const { ok } = await request('/api/feedback/delete', {
@@ -339,8 +351,8 @@ async function markClean(item: FeedbackItem) {
 /** 数据归属：把**当前这一页**导成纯文本带走（要全量就用 scripts/feedback-report.mjs） */
 function buildMarkdown() {
   const lines = [
-    '| id | 时间 | 分类 | 类型 | 想要什么 | 场景 | 针对 | 联系方式 | 状态 | 可疑 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'
+    '| id | 时间 | 分类 | 类型 | 想要什么 | 场景 | 针对 | 联系方式 | 状态 | 不采纳原因 | 可疑 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'
   ]
   const cell = (value: string) => String(value).replace(/\|/g, '\\|').replace(/\n+/g, ' ')
   for (const item of items.value) {
@@ -354,6 +366,7 @@ function buildMarkdown() {
       ' | ' + cell(item.article || '—') +
       ' | ' + cell(item.contact || '—') +
       ' | ' + (STATUS_LABEL[item.status] || item.status) +
+      ' | ' + cell(item.rejectReason || '') +
       ' | ' + (item.suspicious ? '是' : '') +
       ' |'
     )
@@ -567,6 +580,24 @@ onMounted(() => {
             />
             <button class="fb-audit__ghost" type="button" @click="saveResolution(item)">
               保存公开链接
+            </button>
+          </div>
+
+          <!--
+            「不采纳」和「已上线」一样需要一个交代：为什么不做。
+            提交者凭编号能看到这段字（见 FeedbackLookup.vue）；
+            留空不算错，那边会显示一句兜底说明，不会是一片空白。
+          -->
+          <div v-else-if="item.status === 'rejected'" class="fb-audit__resolve">
+            <input
+              v-model="item.rejectReason"
+              type="text"
+              maxlength="200"
+              placeholder="为什么不采纳（提交者凭编号能看到；留空则显示兜底说明）"
+              aria-label="不采纳原因"
+            />
+            <button class="fb-audit__ghost" type="button" @click="saveRejectReason(item)">
+              保存原因
             </button>
           </div>
         </li>

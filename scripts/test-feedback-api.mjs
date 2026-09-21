@@ -160,8 +160,8 @@ test('feedback 表的列齐全（少一列就说明迁移没跟上）', () => {
   const names = rows('PRAGMA table_info(feedback)').map((c) => c.name)
   assert.deepEqual(names, [
     'id', 'category', 'kind', 'want', 'scene', 'article', 'contact',
-    'status', 'resolved_label', 'resolved_url', 'suspicious', 'flag_reason',
-    'ip_hash', 'created_at', 'updated_at', 'ticket'
+    'status', 'resolved_label', 'resolved_url', 'reject_reason', 'suspicious',
+    'flag_reason', 'ip_hash', 'created_at', 'updated_at', 'ticket'
   ])
 })
 
@@ -460,6 +460,93 @@ test('状态从「已上线」退回时清掉公开链接，避免留过期链�
   assert.equal(row.status, 'planned')
   assert.equal(row.resolved_url, null)
   assert.equal(row.resolved_label, null)
+})
+
+test('「不采纳」可以写原因，提交者凭编号能看到', async () => {
+  const submitted = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
+  const ticket = (await submitted.json()).ticket
+  const id = rows('SELECT id FROM feedback')[0].id
+
+  const res = await onRequestPost(
+    ctx(post('/api/feedback/update', {
+      id, status: 'rejected', rejectReason: '这个属于院系内部流程，站里写不了'
+    }, { Cookie: cookie }))
+  )
+  assert.equal(res.status, 200)
+  assert.equal(
+    rows('SELECT reject_reason FROM feedback WHERE id = ?', id)[0].reject_reason,
+    '这个属于院系内部流程，站里写不了'
+  )
+
+  const lookup = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket)))
+  const data = await lookup.json()
+  assert.equal(data.status, 'rejected')
+  assert.equal(data.rejectReason, '这个属于院系内部流程，站里写不了')
+})
+
+test('没写原因时接口返回空串，兜底文案由页面给（提交者看到的不能是空白）', async () => {
+  const submitted = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
+  const ticket = (await submitted.json()).ticket
+  const id = rows('SELECT id FROM feedback')[0].id
+
+  await onRequestPost(ctx(post('/api/feedback/update', { id, status: 'rejected' }, { Cookie: cookie })))
+  const data = await (await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket)))).json()
+  assert.equal(data.status, 'rejected')
+  assert.equal(data.rejectReason, '')
+
+  // 审计页也要能拿到这个字段（空串），否则那个输入框绑不上
+  const list = await (await onRequestGet(ctx(get('/api/feedback/list', { Cookie: cookie })))).json()
+  assert.equal(list.items[0].rejectReason, '')
+})
+
+test('不采纳的原因：能从「已上线」这类状态里写、退回别的状态会被清掉、超长会截断', async () => {
+  await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
+  const id = rows('SELECT id FROM feedback')[0].id
+
+  // 同一次请求里既改状态又写原因
+  await onRequestPost(
+    ctx(post('/api/feedback/update', { id, status: 'rejected', rejectReason: '没这个必要' }, { Cookie: cookie }))
+  )
+  assert.equal(rows('SELECT reject_reason FROM feedback WHERE id = ?', id)[0].reject_reason, '没这个必要')
+
+  // 超过 200 字截断，不是 400
+  await onRequestPost(
+    ctx(post('/api/feedback/update', { id, rejectReason: 'x'.repeat(500) }, { Cookie: cookie }))
+  )
+  assert.equal(rows('SELECT reject_reason FROM feedback WHERE id = ?', id)[0].reject_reason.length, 200)
+
+  // 退回别的状态：原因清掉，免得提交者看到一条对不上的说明
+  await onRequestPost(ctx(post('/api/feedback/update', { id, status: 'planned' }, { Cookie: cookie })))
+  const row = rows('SELECT status, reject_reason FROM feedback WHERE id = ?', id)[0]
+  assert.equal(row.status, 'planned')
+  assert.equal(row.reject_reason, null)
+
+  // 空串等于清掉
+  await onRequestPost(ctx(post('/api/feedback/update', { id, status: 'rejected', rejectReason: '先写一句' }, { Cookie: cookie })))
+  await onRequestPost(ctx(post('/api/feedback/update', { id, rejectReason: '' }, { Cookie: cookie })))
+  assert.equal(rows('SELECT reject_reason FROM feedback WHERE id = ?', id)[0].reject_reason, null)
+})
+
+test('「不采纳原因」的输入框在状态切到不采纳时才出现（和已上线那套一样）', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackAudit.vue'),
+    'utf8'
+  )
+  assert.ok(
+    form.includes("v-else-if=\"item.status === 'rejected'\""),
+    '审计页缺少「不采纳」的输入框'
+  )
+  assert.ok(form.includes('saveRejectReason'), '缺少保存原因的调用')
+  // 提交者那边必须有兜底：没写原因时显示一句人话，而不是空白
+  const lookup = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackLookup.vue'),
+    'utf8'
+  )
+  assert.ok(lookup.includes('rejectReason'), '查询页没有显示不采纳原因')
+  assert.ok(
+    lookup.includes('没有写明原因'),
+    '查询页缺少「维护者没写原因」时的兜底文案'
+  )
 })
 
 test('删除单条', async () => {

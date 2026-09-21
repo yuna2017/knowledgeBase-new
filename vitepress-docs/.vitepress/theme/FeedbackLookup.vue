@@ -12,6 +12,10 @@
  */
 import { onMounted, ref } from 'vue'
 
+/** 与 shared/contact.ts 保持一致：想问一句时的去处 */
+const QQ_GROUP_NUMBER = '978801324'
+const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
+
 interface LookupResult {
   found: boolean
   ticket?: string
@@ -23,6 +27,8 @@ interface LookupResult {
   createdAtText?: string
   updatedAtText?: string
   resolved?: { label: string; url: string } | null
+  /** 维护者写的不采纳原因；可能是空串（那时显示下面的兜底） */
+  rejectReason?: string
 }
 
 /** 与接口里的 STATUS_LABEL 一致 */
@@ -30,7 +36,7 @@ const STATUS_HINT: Record<string, string> = {
   new: '已经收到，还没排上。',
   planned: '确认会写，已经排进队列。',
   done: '已经写成页面了，下面有链接。',
-  rejected: '不在受理范围内，或判断后不做。'
+  rejected: '这条没有被采纳。'
 }
 
 const ticket = ref('')
@@ -132,6 +138,21 @@ onMounted(() => {
       <p class="fb-lookup__hint">{{ STATUS_HINT[result.status || ''] || '' }}</p>
       <p v-if="result.resolved" class="fb-lookup__resolved">
         已经写好了：<a :href="result.resolved.url">{{ result.resolved.label }}</a>
+      </p>
+      <!--
+        「不采纳」一定要给个交代。维护者写了就照实显示；
+        没写就显示这句兜底 —— 空白会让人以为是自己看错了，
+        而「你去群里问一句」至少给了一条明确的路。
+      -->
+      <p v-else-if="result.status === 'rejected'" class="fb-lookup__rejected">
+        <template v-if="result.rejectReason">
+          不采纳的原因：{{ result.rejectReason }}
+        </template>
+        <template v-else>
+          维护者没有写明原因。想知道为什么、或者觉得应该写，到
+          <a :href="QQ_GROUP_URL" target="_blank" rel="noreferrer">QQ 群 {{ QQ_GROUP_NUMBER }}</a>
+          说一句最快。
+        </template>
       </p>
       <p class="fb-lookup__hint">
         编号 <code>{{ result.ticket }}</code>，可以留着以后再看。想补充点什么，直接

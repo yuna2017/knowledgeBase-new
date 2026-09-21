@@ -1842,6 +1842,19 @@ html.dark .fb-audit__status {
   font-size: 14px;
 }
 
+/*
+ * 「不采纳」的原因。左边一道竖线，和上面那句状态说明区分开——
+ * 这是维护者写的话，不是系统的固定文案。
+ */
+.fb-lookup__rejected {
+  margin: 10px 0 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--vp-c-divider);
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
 .fb-lookup code {
   padding: 1px 5px;
   border-radius: 4px;
