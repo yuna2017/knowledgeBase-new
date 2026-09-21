@@ -66,25 +66,38 @@ function tagDescription(tagName: string, count: number, docs: unknown): string {
   const titles = list.map((doc) => String(doc?.title ?? '').trim()).filter(Boolean)
 
   const head = `YUNA 知识库中归入「${tagName}」标签的 ${count} 篇文档`
-  if (titles.length === 0) return head + '。'
 
-  // 列到放不下为止，剩下的用「等 N 篇」收尾，避免中途被截断成半个标题
+  /*
+   * 列到放不下为止，剩下的用「等 N 篇」收尾，避免中途被截断成半个标题。
+   *
+   * 预留的长度必须按**收尾语的实际长度**算：列完还有剩余时结尾是
+   * 「 等 N 篇。」，比兜底的「。」长好几个字符。只按 1 个字预留的话，
+   * 列到临界值就会被后缀顶穿 DESCRIPTION_MAX。
+   *
+   * 这个越界曾经真的发生过：AI工具 标签页被顶到 133 字。触发它的是
+   * 一次普通提交——本文件按「最后一次提交日期」给标签页里的文档排序
+   * （见 tags/[tag].paths.ts），提交后顺序一变，累计到临界值的标题
+   * 组合就换了，边界才暴露出来。
+   */
   const listed: string[] = []
   for (const title of titles) {
     const next = [...listed, title].join('、')
-    if (head.length + 1 + next.length + 1 > DESCRIPTION_MAX) break
+    const rest = titles.length - (listed.length + 1)
+    const tail = rest > 0 ? ` 等 ${titles.length} 篇。` : '。'
+    if (head.length + 1 + next.length + tail.length > DESCRIPTION_MAX) break
     listed.push(title)
   }
-  if (listed.length === 0) return head + '。'
 
   const rest = titles.length - listed.length
-  const text = head + '：' + listed.join('、') +
-    (rest > 0 ? ` 等 ${titles.length} 篇。` : '。')
+  const text = listed.length
+    ? head + '：' + listed.join('、') +
+      (rest > 0 ? ` 等 ${titles.length} 篇。` : '。')
+    : head + '。'
 
   /*
-   * 标签下只有一两篇时，光列标题凑不满长度。这里补上首篇自己的摘要：
-   * 它逐个标签都不同，不会像一句固定的收尾语那样，让四十多个标签页
-   * 从「模板重复」换成另一种形式的重复。
+   * 标签下只有一两篇（或标题很长列不进去）时，光列标题凑不满长度。
+   * 这里补上首篇自己的摘要：它逐个标签都不同，不会像一句固定的收尾语那样，
+   * 让四十多个标签页从「模板重复」换成另一种形式的重复。
    */
   if (text.length >= DESCRIPTION_MIN) return text
   const lead = String(list[0]?.description ?? '').trim()
