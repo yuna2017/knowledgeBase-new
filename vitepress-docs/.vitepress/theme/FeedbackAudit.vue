@@ -17,6 +17,7 @@ import { computed, onMounted, ref } from 'vue'
 
 interface FeedbackItem {
   id: number
+  ticket: string
   category: string
   kind: 'gap' | 'fix' | string
   want: string
@@ -194,13 +195,6 @@ async function setStatus(item: FeedbackItem, status: string) {
     item.resolvedUrl = ''
   }
   if (!(await patch(item, { status }))) item.status = previous
-  else await load()
-}
-
-async function setCategory(item: FeedbackItem, category: string) {
-  const previous = item.category
-  item.category = category
-  if (!(await patch(item, { category }))) item.category = previous
   else await load()
 }
 
@@ -402,18 +396,9 @@ onMounted(() => {
               {{ item.kind === 'fix' ? '勘误' : '缺口' }}
             </span>
             <span class="fb-audit__time">{{ item.createdAtText }}</span>
+            <span v-if="item.ticket" class="fb-audit__ticket">{{ item.ticket }}</span>
             <span v-if="item.suspicious" class="fb-audit__suspect">可疑</span>
             <span class="fb-audit__spacer" />
-            <!-- 右边一律是「操作」：改分类、改状态、删 -->
-            <select
-              class="fb-audit__category"
-              :value="item.category"
-              aria-label="改分类"
-              title="改分类：提交时选错了才需要动，公开统计按这一列聚合"
-              @change="setCategory(item, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="name in categories" :key="name" :value="name">{{ name }}</option>
-            </select>
             <select
               class="fb-audit__status"
               :class="'fb-audit__status--' + item.status"

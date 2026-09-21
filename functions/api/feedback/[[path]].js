@@ -11,9 +11,10 @@
  *   POST /api/feedback/login         密码换会话 Cookie
  *   POST /api/feedback/logout        清除会话
  *   GET  /api/feedback/stats         公开聚合（分类 + 条数 + 状态 + 已上线链接）
+ *   GET  /api/feedback/lookup?t=XXXX  凭查询码查自己那条的状态（公开，不回显联系方式）
  *   GET  /api/feedback/session       查询当前是否已登录
  *   GET  /api/feedback/list          审计明细（需登录）
- *   POST /api/feedback/update        改状态 / 分类 / 已上线链接（需登录）
+ *   POST /api/feedback/update        改状态 / 已上线链接（需登录；**分类不可改**）
  *   POST /api/feedback/delete        删单条，或一次删掉全部可疑条目（需登录）
  *
  * 必须在 Pages 项目设置里配置环境变量 `FEEDBACK_ADMIN_PASSWORD`：
@@ -50,6 +51,25 @@ const CATEGORIES = [
 ]
 const KINDS = new Set(['gap', 'fix'])
 const STATUSES = new Set(['new', 'planned', 'done', 'rejected'])
+const STATUS_LABEL = {
+  new: '未看',
+  planned: '计划中',
+  done: '已上线',
+  rejected: '不采纳'
+}
+
+/**
+ * 查询码。
+ *
+ * 用它而不是数据库自增 id：id 是连续的，谁都能从 1 数到尾，
+ * 把每一条的分类和状态翻出来。查询码是随机的，猜不到。
+ *
+ * 字母表去掉了 I / L / O / 0 / 1——这几个在截图和手抄时最容易认错。
+ */
+const TICKET_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+const TICKET_LEN = 8
+/** 查询结果里回显的「你提交的是」，够认出是自己那条就行 */
+const WANT_PREVIEW = 40
 
 const WANT_MAX = 2000
 const SCENE_MAX = 1000
@@ -128,6 +148,24 @@ function base64url(bytes) {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** 生成一个查询码，形如 `K7M2-9Q4P` */
+function makeTicket() {
+  const bytes = new Uint8Array(TICKET_LEN)
+  crypto.getRandomValues(bytes)
+  let raw = ''
+  for (let i = 0; i < TICKET_LEN; i += 1) {
+    raw += TICKET_ALPHABET[bytes[i] % TICKET_ALPHABET.length]
+  }
+  return raw.slice(0, 4) + '-' + raw.slice(4)
+}
+
+/** 把用户输入的查询码归一化：忽略大小写、空格和有没有那一横 */
+function cleanTicket(value) {
+  const raw = String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (raw.length !== TICKET_LEN) return ''
+  return raw.slice(0, 4) + '-' + raw.slice(4)
 }
 
 /* ------------------------------------------------------------------ 会话 */
@@ -264,7 +302,8 @@ function schemaStatements(db) {
          suspicious     INTEGER NOT NULL DEFAULT 0,
          ip_hash        TEXT,
          created_at     INTEGER NOT NULL,
-         updated_at     INTEGER
+         updated_at     INTEGER,
+         ticket         TEXT
        )`
     ),
     db.prepare(
@@ -272,6 +311,10 @@ function schemaStatements(db) {
     ),
     db.prepare(
       'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)'
+    ),
+    // 查询码唯一。NULL 在 SQLite 里互不相等，所以迁移前的老行留空不会撞。
+    db.prepare(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback (ticket)'
     ),
     db.prepare(
       `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
@@ -406,9 +449,11 @@ async function handleSubmit(context) {
     if (wantsJson) return json({ error }, status)
     return Response.redirect(new URL(redirectTo, request.url).toString(), 303)
   }
-  const succeed = () => {
-    if (wantsJson) return json({ ok: true }, 200)
-    return Response.redirect(new URL('/wanted-done', request.url).toString(), 303)
+  const succeed = (ticket) => {
+    if (wantsJson) return json({ ok: true, ticket }, 200)
+    // 查询码跟着跳转带过去，用户才能在自己那条上看到它
+    const target = '/wanted-done?t=' + encodeURIComponent(ticket)
+    return Response.redirect(new URL(target, request.url).toString(), 303)
   }
 
   if (!fields) return fail(400, 'invalid body', '/wanted?error=1')
@@ -484,23 +529,24 @@ async function handleSubmit(context) {
       return fail(429, 'too many submissions today', '/wanted?error=rate')
     }
 
+    const ticket = makeTicket()
     await env.DB.prepare(
       `INSERT INTO feedback
-         (category, kind, want, scene, article, contact, status,
+         (ticket, category, kind, want, scene, article, contact, status,
           suspicious, ip_hash, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`
     )
       .bind(
-        category, kind, want, scene, article || null, contact || null,
+        ticket, category, kind, want, scene, article || null, contact || null,
         suspicious, hash, now, now
       )
       .run()
+
+    return succeed(ticket)
   } catch (error) {
     console.error('[feedback] 写入失败', error)
     return fail(500, 'storage error', '/wanted?error=1')
   }
-
-  return succeed()
 }
 
 /* ------------------------------------------------------------------ 登录 / 会话 */
@@ -634,6 +680,54 @@ async function handleStats(env) {
   )
 }
 
+/* ------------------------------------------------------------------ 提交者自查 */
+
+/**
+ * 凭查询码查自己那条的状态，公开。
+ *
+ * 用随机查询码而不是自增 id，就是为了让这个接口能公开：id 是连续的，
+ * 谁都能从 1 数到尾把每条的归属翻出来；查询码猜不到，所以只有拿到码的人能查。
+ *
+ * 返回里**不回显联系方式**，正文只回显前 40 个字——够本人认出是自己那条，
+ * 又不至于让人拿它当内容接口用。
+ */
+async function handleLookup(request, env) {
+  const ticket = cleanTicket(new URL(request.url).searchParams.get('t'))
+  if (!ticket) return json({ error: 'invalid ticket' }, 400)
+
+  await ensureSchema(env)
+  const row = await env.DB.prepare(
+    `SELECT ticket, category, kind, want, status,
+            resolved_label, resolved_url, created_at, updated_at
+       FROM feedback WHERE ticket = ?`
+  )
+    .bind(ticket)
+    .first()
+
+  if (!row) return json({ found: false, ticket }, 200)
+
+  return json(
+    {
+      found: true,
+      ticket: row.ticket,
+      category: row.category,
+      kind: row.kind,
+      wantPreview:
+        String(row.want).length > WANT_PREVIEW
+          ? String(row.want).slice(0, WANT_PREVIEW) + '…'
+          : String(row.want),
+      status: row.status,
+      statusLabel: STATUS_LABEL[row.status] || row.status,
+      createdAtText: utc8Stamp(Number(row.created_at)),
+      updatedAtText: row.updated_at ? utc8Stamp(Number(row.updated_at)) : '',
+      resolved: row.resolved_url
+        ? { label: row.resolved_label || row.category, url: row.resolved_url }
+        : null
+    },
+    200
+  )
+}
+
 /* ------------------------------------------------------------------ 审计 */
 
 async function handleList(request, env) {
@@ -641,7 +735,7 @@ async function handleList(request, env) {
 
   await ensureSchema(env)
   const { results } = await env.DB.prepare(
-    `SELECT id, category, kind, want, scene, article, contact, status,
+    `SELECT id, ticket, category, kind, want, scene, article, contact, status,
             resolved_label, resolved_url, suspicious, created_at, updated_at
        FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT ?`
   )
@@ -650,6 +744,7 @@ async function handleList(request, env) {
 
   const items = (results || []).map((row) => ({
     id: row.id,
+    ticket: row.ticket || '',
     category: row.category,
     kind: row.kind,
     want: row.want,
@@ -691,7 +786,7 @@ async function handleList(request, env) {
   )
 }
 
-/** 改状态 / 分类 / 已上线链接。所有字段都可选，只改传上来的那些。 */
+/** 改状态 / 已上线链接。所有字段都可选，只改传上来的那些。 */
 async function handleUpdate(context) {
   const { request, env } = context
   if (!(await isAuthed(request, env))) return json({ error: 'unauthorized' }, 401)
@@ -717,12 +812,6 @@ async function handleUpdate(context) {
       sets.push('resolved_label = NULL', 'resolved_url = NULL')
     }
   }
-  if (body.category !== undefined) {
-    const category = clean(body.category, 32)
-    if (!CATEGORIES.includes(category)) return json({ error: 'invalid category' }, 400)
-    sets.push('category = ?')
-    values.push(category)
-  }
   if (body.resolvedLabel !== undefined) {
     sets.push('resolved_label = ?')
     values.push(clean(body.resolvedLabel, LABEL_MAX) || null)
@@ -734,6 +823,16 @@ async function handleUpdate(context) {
     }
     sets.push('resolved_url = ?')
     values.push(url || null)
+  }
+
+  /*
+   * 刻意**不支持改分类**。
+   * 分类是公开统计的聚合键，能让后台随手改的话，「分类」就变成维护者的判断而非
+   * 提交者说的东西；而且统计数字会在没人察觉的情况下被改写。
+   * 选错了就让它错着——那本身也是一条关于选项设计的信息。
+   */
+  if (body.category !== undefined) {
+    return json({ error: '分类不可修改' }, 400)
   }
 
   if (!sets.length) return json({ error: 'nothing to update' }, 400)
@@ -781,7 +880,7 @@ function resolveAction(url) {
   const path = url.pathname.replace(/\/+$/, '')
   if (path === '/api/feedback') return 'submit'
   const match = path.match(
-    /^\/api\/feedback\/(login|logout|session|list|stats|update|delete)$/
+    /^\/api\/feedback\/(login|logout|session|list|stats|lookup|update|delete)$/
   )
   return match ? match[1] : null
 }
@@ -803,6 +902,7 @@ async function guard(run) {
 export async function onRequestGet(context) {
   const action = resolveAction(new URL(context.request.url))
   if (action === 'stats') return guard(() => handleStats(context.env))
+  if (action === 'lookup') return guard(() => handleLookup(context.request, context.env))
   if (action === 'session') return guard(() => handleSession(context.request, context.env))
   if (action === 'list') return guard(() => handleList(context.request, context.env))
   return json({ error: 'not found' }, 404)

@@ -1279,6 +1279,17 @@ a.home-card:hover {
   font-size: 12px;
 }
 
+/* 提交者手里的查询码，对得上号用 */
+.fb-audit__ticket {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-3);
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
 .fb-audit__status {
   padding: 4px 8px;
   border: 1px solid var(--vp-c-divider);
@@ -1425,7 +1436,6 @@ a.home-card:hover {
  */
 .feedback-form__select,
 .fb-audit__filters select,
-.fb-audit__category,
 .fb-audit__status {
   -webkit-appearance: none;
   appearance: none;
@@ -1438,7 +1448,6 @@ a.home-card:hover {
 
 html.dark .feedback-form__select,
 html.dark .fb-audit__filters select,
-html.dark .fb-audit__category,
 html.dark .fb-audit__status {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
@@ -1455,29 +1464,28 @@ html.dark .fb-audit__status {
 .fb-audit__login-input:focus-visible,
 .fb-audit__filters input:focus-visible,
 .fb-audit__filters select:focus-visible,
-.fb-audit__category:focus-visible,
 .fb-audit__status:focus-visible,
-.fb-audit__resolve input:focus-visible {
+.fb-audit__resolve input:focus-visible,
+.fb-lookup__input:focus-visible {
   outline: 2px solid var(--vp-c-brand-1);
   outline-offset: 1px;
   border-color: var(--vp-c-brand-1);
 }
 
-/* ---- 审计页：分类选择、状态色、已上线链接、可疑标记 ---- */
-
-.fb-audit__category {
-  max-width: 8.5em;
-  padding: 3px 26px 3px 8px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
-  color: var(--vp-c-text-1);
-  background-color: var(--vp-c-bg);
-  font-size: 13px;
-}
+/* ---- 审计页：状态色、已上线链接、可疑标记 ---- */
 
 /*
- * 状态色。四个状态在下拉框里长得一样的话，扫一眼看不出哪些还没处理，
- * 所以按状态给下拉框上色。左侧竖条同步上色，列表整体就能一眼分区。
+ * 状态色。
+ *
+ * 四个状态的色阶是刻意排的：
+ *   未看    ＝ 黄（待办，不是错误）
+ *   计划中  ＝ 靛蓝（已排期）
+ *   已上线  ＝ 绿（完成）
+ *   不采纳  ＝ 灰（关闭）
+ *
+ * **红色不参与状态** —— 它留给「可疑」。第一版把「未看」也涂成红的，
+ * 结果刚上线、所有条目都还没看时，整页是一片红，看着像出了事故。
+ * 红只应该表示「需要你判断」，不该表示「还没轮到你」。
  */
 .fb-audit__status {
   border-width: 1px;
@@ -1486,22 +1494,43 @@ html.dark .fb-audit__status {
 }
 
 .fb-audit__status--new {
-  border-color: var(--vp-c-danger-1);
-  color: var(--vp-c-danger-1);
-}
-
-.fb-audit__status--planned {
   border-color: var(--vp-c-warning-1);
   color: var(--vp-c-warning-1);
 }
 
-.fb-audit__status--done {
+.fb-audit__status--planned {
   border-color: var(--vp-c-brand-1);
   color: var(--vp-c-brand-1);
 }
 
+.fb-audit__status--done {
+  border-color: var(--vp-c-success-1);
+  color: var(--vp-c-success-1);
+}
+
 .fb-audit__status--rejected {
   border-color: var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+}
+
+/*
+ * 下拉框里的四个选项也上色，展开时一眼能看到整套对应关系。
+ * 原生 option 的样式支持参差不齐（背景色基本无效），但 color 在主流的
+ * Chrome / Firefox + Windows 上是生效的；不生效也只是退回默认色，不会坏。
+ */
+.fb-audit__status option[value='new'] {
+  color: var(--vp-c-warning-1);
+}
+
+.fb-audit__status option[value='planned'] {
+  color: var(--vp-c-brand-1);
+}
+
+.fb-audit__status option[value='done'] {
+  color: var(--vp-c-success-1);
+}
+
+.fb-audit__status option[value='rejected'] {
   color: var(--vp-c-text-3);
 }
 
@@ -1511,15 +1540,15 @@ html.dark .fb-audit__status {
 }
 
 .fb-audit__item--new {
-  border-left-color: var(--vp-c-danger-1);
-}
-
-.fb-audit__item--planned {
   border-left-color: var(--vp-c-warning-1);
 }
 
-.fb-audit__item--done {
+.fb-audit__item--planned {
   border-left-color: var(--vp-c-brand-1);
+}
+
+.fb-audit__item--done {
+  border-left-color: var(--vp-c-success-1);
 }
 
 .fb-audit__item--rejected {
@@ -1588,5 +1617,131 @@ html.dark .fb-audit__status {
   .fb-audit__resolve input {
     flex: 1 1 100%;
   }
+}
+
+/* ---- 查询自己那条的状态（/wanted-done 和 /wanted-status 共用）---- */
+
+.fb-lookup {
+  margin: 18px 0 8px;
+  padding: 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+}
+
+.fb-lookup__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.fb-lookup__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.fb-lookup__input {
+  flex: 0 1 150px;
+  padding: 8px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-family: var(--vp-font-family-mono);
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fb-lookup__button {
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--vp-c-white);
+  background: var(--vp-c-brand-1);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fb-lookup__button:hover:not(:disabled) {
+  background: var(--vp-c-brand-2);
+}
+
+.fb-lookup__button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fb-lookup__hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--vp-c-text-2);
+}
+
+.fb-lookup__result {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.fb-lookup__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+/* 四个状态四种颜色，与审计页同一套（红只留给「可疑」） */
+.fb-lookup__status {
+  padding: 2px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fb-lookup__status--new {
+  color: var(--vp-c-warning-1);
+}
+
+.fb-lookup__status--planned {
+  color: var(--vp-c-brand-1);
+}
+
+.fb-lookup__status--done {
+  color: var(--vp-c-success-1);
+}
+
+.fb-lookup__status--rejected {
+  color: var(--vp-c-text-3);
+}
+
+.fb-lookup__meta {
+  font-size: 13px;
+  color: var(--vp-c-text-3);
+}
+
+.fb-lookup__want {
+  margin: 10px 0 0;
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.fb-lookup__resolved {
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+
+.fb-lookup code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--vp-c-bg);
+  font-size: 0.92em;
 }
 

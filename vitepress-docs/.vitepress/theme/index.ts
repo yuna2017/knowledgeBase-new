@@ -6,6 +6,7 @@ import Layout from './Layout.vue'
 import FeedbackForm from './FeedbackForm.vue'
 import FeedbackAudit from './FeedbackAudit.vue'
 import FeedbackStatus from './FeedbackStatus.vue'
+import FeedbackLookup from './FeedbackLookup.vue'
 import '@nolebase/vitepress-plugin-git-changelog/client/style.css'
 import '@nolebase/vitepress-plugin-inline-link-preview/client/style.css'
 import './custom.css'
@@ -24,5 +25,6 @@ export default {
     app.component('FeedbackForm', FeedbackForm)
     app.component('FeedbackAudit', FeedbackAudit)
     app.component('FeedbackStatus', FeedbackStatus)
+    app.component('FeedbackLookup', FeedbackLookup)
   }
 } satisfies Theme

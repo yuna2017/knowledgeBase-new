@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_views_day ON daily_views (day DESC);
 
 CREATE TABLE IF NOT EXISTS feedback (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  category       TEXT    NOT NULL,           -- 聚合用的分类，枚举见接口里的 CATEGORIES
+  category       TEXT    NOT NULL,           -- 聚合用的分类，枚举见接口里的 CATEGORIES；**不可修改**
   kind           TEXT    NOT NULL,           -- gap（缺口） / fix（勘误）
   want           TEXT    NOT NULL,
   scene          TEXT    NOT NULL,
@@ -44,11 +44,15 @@ CREATE TABLE IF NOT EXISTS feedback (
   suspicious     INTEGER NOT NULL DEFAULT 0,  -- 蜜罐命中或填得太快，只标记不丢弃
   ip_hash        TEXT,
   created_at     INTEGER NOT NULL,            -- epoch 毫秒
-  updated_at     INTEGER
+  updated_at     INTEGER,
+  ticket         TEXT                         -- 查询码（形如 K7M2-9Q4P），提交者凭它查自己那条
 );
 
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at);
+
+-- 查询码唯一。NULL 在 SQLite 里互不相等，所以迁移前留下的空值不会互相冲突。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback (ticket);
 
 -- 审计口令的失败计数，用于锁定暴力尝试
 CREATE TABLE IF NOT EXISTS feedback_login_attempts (

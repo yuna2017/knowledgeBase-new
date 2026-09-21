@@ -135,8 +135,8 @@ test('worker/schema.sql 与接口里的 schemaStatements() 是同一份定义', 
   // schemaStatements 只是把每条 DDL 包进 db.prepare()，传个记录的桩就能拿到原文
   const fromCode = schemaStatements({ prepare: (sql) => sql })
 
-  assert.equal(fromFile.length, 4, 'schema.sql 里应当有 4 条 feedback 相关 DDL，实际 ' + fromFile.length)
-  assert.equal(fromCode.length, 4)
+  assert.equal(fromFile.length, 5, 'schema.sql 里应当有 5 条 feedback 相关 DDL，实际 ' + fromFile.length)
+  assert.equal(fromCode.length, 5)
 
   const fileDb = new DatabaseSync(':memory:')
   const codeDb = new DatabaseSync(':memory:')
@@ -160,7 +160,7 @@ test('feedback 表的列齐全（少一列就说明迁移没跟上）', () => {
   assert.deepEqual(names, [
     'id', 'category', 'kind', 'want', 'scene', 'article', 'contact',
     'status', 'resolved_label', 'resolved_url', 'suspicious',
-    'ip_hash', 'created_at', 'updated_at'
+    'ip_hash', 'created_at', 'updated_at', 'ticket'
   ])
 })
 
@@ -230,14 +230,15 @@ test('「勘误」保留「针对哪一篇」', async () => {
   assert.equal(rows('SELECT article FROM feedback')[0].article, '/campus-card')
 })
 
-test('表单编码提交返回 303 且跳 /wanted-done', async () => {
+test('表单编码提交返回 303 且带着查询码跳 /wanted-done', async () => {
   const body = new URLSearchParams({
     category: '一卡通', kind: 'fix', want: '补办地点变了', scene: '照着文章跑空',
     article: '/campus-card', fb_trap: ''
   })
   const res = await onRequestPost(ctx(new Request(BASE + '/api/feedback', { method: 'POST', body })))
   assert.equal(res.status, 303)
-  assert.ok((res.headers.get('Location') || '').endsWith('/wanted-done'))
+  const location = res.headers.get('Location') || ''
+  assert.ok(location.indexOf('/wanted-done?t=') >= 0, '跳转地址是 ' + location)
   assert.equal(rows('SELECT article FROM feedback')[0].article, '/campus-card')
 })
 
@@ -347,23 +348,23 @@ test('改状态', async () => {
   assert.equal(rows('SELECT status FROM feedback WHERE id = ?', id)[0].status, 'planned')
 })
 
-test('改分类（聚合的键，选错必须能改回来）', async () => {
+test('分类不可修改：审计页只能看，传上来也拒', async () => {
   await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
   const id = rows('SELECT id FROM feedback')[0].id
   const res = await onRequestPost(
     ctx(post('/api/feedback/update', { id, category: '宿舍' }, { Cookie: cookie }))
   )
-  assert.equal(res.status, 200)
-  assert.equal(rows('SELECT category FROM feedback WHERE id = ?', id)[0].category, '宿舍')
+  assert.equal(res.status, 400)
+  assert.equal(rows('SELECT category FROM feedback WHERE id = ?', id)[0].category, '一卡通')
 })
 
-test('非法分类被 400 拒绝', async () => {
+test('分类不可修改，但不影响同一次请求里改状态', async () => {
   await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
   const id = rows('SELECT id FROM feedback')[0].id
   const res = await onRequestPost(
-    ctx(post('/api/feedback/update', { id, category: 'x' }, { Cookie: cookie }))
+    ctx(post('/api/feedback/update', { id, status: 'planned' }, { Cookie: cookie }))
   )
-  assert.equal(res.status, 400)
+  assert.equal(res.status, 200)
 })
 
 test('已上线链接：接受站内路径和 https，拒绝 javascript:', async () => {
@@ -439,6 +440,108 @@ test('审计列表带出新增字段，并按「可疑排最后」返回', async
   assert.equal(data.items[0].article, '/campus-card')
   assert.equal(data.summary.total, 1)
   assert.equal(data.summary.suspicious, 1)
+})
+
+/* ------------------------------------------------------------------ 查询码与提交者自查 */
+
+const TICKET_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/
+
+async function submitAndGetTicket(ip = IP_A) {
+  const res = await onRequestPost(ctx(post('/api/feedback', VALID, ip)))
+  assert.equal(res.status, 200)
+  return (await res.json()).ticket
+}
+
+test('提交会返回一个查询码，形如 XXXX-XXXX', async () => {
+  const ticket = await submitAndGetTicket()
+  assert.match(ticket, TICKET_RE)
+})
+
+test('查询码里没有 I/L/O/0/1（截图和手抄最容易认错的几个）', async () => {
+  for (let i = 0; i < 20; i += 1) {
+    const ticket = await submitAndGetTicket({ 'CF-Connecting-IP': '192.0.2.' + (10 + i) })
+    assert.ok(!/[ILO01]/.test(ticket), '出现了易混字符：' + ticket)
+  }
+})
+
+test('每条查询码都不一样', async () => {
+  const seen = new Set()
+  for (let i = 0; i < 20; i += 1) {
+    seen.add(await submitAndGetTicket({ 'CF-Connecting-IP': '198.18.0.' + (10 + i) }))
+  }
+  assert.equal(seen.size, 20)
+})
+
+test('凭查询码能查到状态，不需要登录', async () => {
+  const ticket = await submitAndGetTicket()
+  const res = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket)))
+  assert.equal(res.status, 200)
+  const data = await res.json()
+  assert.equal(data.found, true)
+  assert.equal(data.ticket, ticket)
+  assert.equal(data.status, 'new')
+  assert.equal(data.statusLabel, '未看')
+  assert.equal(data.category, '一卡通')
+  assert.equal(data.kind, 'gap')
+})
+
+test('查询码忽略大小写，有没有那一横都行', async () => {
+  const ticket = await submitAndGetTicket()
+  const variants = [ticket.toLowerCase(), ticket.replace('-', ''), ' ' + ticket + ' ']
+  for (const variant of variants) {
+    const data = await onRequestGet(
+      ctx(get('/api/feedback/lookup?t=' + encodeURIComponent(variant)))
+    ).then((r) => r.json())
+    assert.equal(data.found, true, '变体没查到：' + variant)
+    assert.equal(data.ticket, ticket)
+  }
+})
+
+test('查询只回显正文前 40 个字', async () => {
+  const long = '这是一条很长很长的反馈内容'.repeat(6)
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, want: long }, IP_A)))
+  const ticket = rows('SELECT ticket FROM feedback')[0].ticket
+  const data = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket))).then((r) => r.json())
+  assert.ok(data.wantPreview.length <= 41, '回显了 ' + data.wantPreview.length + ' 个字')
+  assert.ok(data.wantPreview.endsWith('…'))
+})
+
+test('查询结果里没有联系方式（公开接口不该有）', async () => {
+  const ticket = await submitAndGetTicket()
+  const raw = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket))).then((r) => r.text())
+  assert.ok(raw.indexOf(VALID.contact) < 0, '泄露了联系方式')
+  assert.ok(raw.indexOf('contact') < 0, '响应里连字段名都不该有')
+})
+
+test('编码格式不对返回 400，不是 500', async () => {
+  for (const bad of ['', 'ABC', 'ABCD-EFGH-IJKL']) {
+    const res = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + encodeURIComponent(bad))))
+    assert.equal(res.status, 400, '输入 ' + JSON.stringify(bad) + ' 的状态是 ' + res.status)
+  }
+})
+
+test('查不到的查询码返回 found:false，而不是 404', async () => {
+  const res = await onRequestGet(ctx(get('/api/feedback/lookup?t=ZZZZ-9999')))
+  assert.equal(res.status, 200)
+  assert.equal((await res.json()).found, false)
+})
+
+test('标成已上线并填了链接后，提交者查得到链接', async () => {
+  const ticket = await submitAndGetTicket()
+  const id = rows('SELECT id FROM feedback')[0].id
+  await onRequestPost(ctx(post('/api/feedback/update', {
+    id, status: 'done', resolvedLabel: '校园卡补办流程', resolvedUrl: '/campus-card'
+  }, { Cookie: cookie })))
+
+  const data = await onRequestGet(ctx(get('/api/feedback/lookup?t=' + ticket))).then((r) => r.json())
+  assert.equal(data.statusLabel, '已上线')
+  assert.deepEqual(data.resolved, { label: '校园卡补办流程', url: '/campus-card' })
+})
+
+test('审计列表带出查询码，方便和提交者对上号', async () => {
+  const ticket = await submitAndGetTicket()
+  const data = await onRequestGet(ctx(get('/api/feedback/list', { Cookie: cookie }))).then((r) => r.json())
+  assert.equal(data.items[0].ticket, ticket)
 })
 
 /* ------------------------------------------------------------------ 公开统计 */
@@ -657,6 +760,18 @@ test('令牌字段名前后端一致', () => {
   // Turnstile 自己塞的隐藏 input 默认就叫这个名字，两边都得用同一个
   assert.ok(api.includes("'cf-turnstile-response'"), '接口没读这个字段')
   assert.ok(form.includes('cf-turnstile-response'), '表单没带上这个字段')
+})
+
+test('提交接口会返回查询码，前端也必须把它带去完成页', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
+  assert.ok(api.includes('ticket'), '接口要生成查询码')
+  // 只判断 res.ok 就把响应体扔掉的话，用户拿不到编号、查不了自己那条
+  assert.ok(form.includes("'/wanted-done?t='"), '前端跳转没带上查询码')
+  assert.ok(form.includes('data.ticket'), '前端没从响应体里读查询码')
 })
 
 test('TURNSTILE_ACTION 前后端一致', () => {

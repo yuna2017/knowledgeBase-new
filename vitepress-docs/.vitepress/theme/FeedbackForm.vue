@@ -148,7 +148,9 @@ function savePending(payload: unknown) {
 /* ------------------------------------------------------------ 提交 */
 
 /** 单次请求。返回 'ok' / 'error'，error 时带上可读原因。 */
-async function postOnce(payload: Record<string, unknown>): Promise<{ ok: boolean; reason: string }> {
+async function postOnce(
+  payload: Record<string, unknown>
+): Promise<{ ok: boolean; reason: string; ticket: string }> {
   try {
     const res = await fetch('/api/feedback', {
       method: 'POST',
@@ -158,15 +160,25 @@ async function postOnce(payload: Record<string, unknown>): Promise<{ ok: boolean
       // keepalive：用户点完提交就切走或关标签页，请求也能发完
       keepalive: true
     })
-    if (res.ok) return { ok: true, reason: '' }
+    if (res.ok) {
+      // 查询码在这个响应体里，**不能只判断 ok 就把它扔掉**——
+      // 用户拿不到编号就查不了自己那条，这个功能等于没做
+      const data = await res.json().catch(() => null)
+      const ticket = data && typeof data.ticket === 'string' ? data.ticket : ''
+      return { ok: true, reason: '', ticket }
+    }
     if (res.status === 429) {
-      return { ok: false, reason: '提交太频繁了，请过一会儿再试' }
+      return { ok: false, reason: '提交太频繁了，请过一会儿再试', ticket: '' }
     }
     const data = await res.json().catch(() => null)
     const detail = data && typeof data.error === 'string' ? data.error : ''
-    return { ok: false, reason: detail ? detail + '（' + res.status + '）' : '接口返回 ' + res.status }
+    return {
+      ok: false,
+      reason: detail ? detail + '（' + res.status + '）' : '接口返回 ' + res.status,
+      ticket: ''
+    }
   } catch {
-    return { ok: false, reason: '请求没有发出去，可能是网络或接口暂时不可用' }
+    return { ok: false, reason: '请求没有发出去，可能是网络或接口暂时不可用', ticket: '' }
   }
 }
 
@@ -182,7 +194,11 @@ async function send(payload: Record<string, unknown>) {
     if (result.ok) {
       clearDraft()
       message.value = '提交成功，正在跳转…'
-      window.location.assign('/wanted-done')
+      // 带上查询码，好让完成页直接显示它（服务端原生表单那条路也是这么跳的）
+      const target = result.ticket
+        ? '/wanted-done?t=' + encodeURIComponent(result.ticket)
+        : '/wanted-done'
+      window.location.assign(target)
       return
     }
     reason = result.reason
