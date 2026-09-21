@@ -13,7 +13,7 @@
  *   GET  /api/feedback/stats         公开聚合（分类 + 条数 + 状态 + 已上线链接）
  *   GET  /api/feedback/lookup?t=XXXX  凭查询码查自己那条的状态（公开，不回显联系方式）
  *   GET  /api/feedback/session       查询当前是否已登录
- *   GET  /api/feedback/list          审计明细（需登录）
+ *   GET  /api/feedback/list          审计明细（需登录；服务端分页 + 筛选，见 handleList）
  *   POST /api/feedback/update        改状态 / 已上线链接 / 可疑标记（需登录；**分类不可改**）
  *   POST /api/feedback/delete        删单条，或一次删掉「蜜罐 / 过快」那两类可疑（需登录）
  *
@@ -102,8 +102,15 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000
 /** 会话有效期 */
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 const COOKIE_NAME = 'kb_feedback_admin'
-/** 审计列表一次最多返回多少条 */
-const LIST_MAX = 1000
+/**
+ * 审计列表每页多少条。
+ * **只认白名单里的值**：不让人用 `?per=100000` 把 D1 和浏览器一起拖死；
+ * 默认 20 是「一屏能看完、不用滚很久」的量，维护者是逐条读内容的，不是扫标题。
+ */
+const LIST_PER_CHOICES = [20, 50, 100]
+const LIST_PER_DEFAULT = 20
+/** 搜索词上限，防止拿超长 LIKE 扫库 */
+const KEYWORD_MAX = 60
 
 const encoder = new TextEncoder()
 
@@ -825,16 +832,92 @@ async function handleLookup(request, env) {
 
 /* ------------------------------------------------------------------ 审计 */
 
+/**
+ * 审计明细：**服务端分页 + 服务端筛选**。
+ *
+ * 为什么筛选必须在服务端：以前是「一次拉最多 1000 条，前端 filter」。那样有两个毛病——
+ * 一页塞上千条内容（每条都是几百字的正文），浏览器先卡；更要命的是超过上限后，
+ * `ORDER BY suspicious ASC, created_at DESC` 截掉的恰好是**最老的、最该处理的那批**，
+ * 而页面不会有任何提示。现在筛选条件进 SQL，前端只管渲染当前这一页。
+ *
+ * 参数（都可选）：`page` / `per`（白名单 20·50·100）/ `status` / `category` / `kind` /
+ * `suspicious`（only / hide）/ `q`（在 want·scene·article·contact 里模糊搜）。
+ *
+ * 返回里的 `summary` 是**全表**统计，和筛选无关——顶部那几个数字不该跟着筛选跳。
+ */
+function likePattern(value) {
+  const raw = clean(value, KEYWORD_MAX)
+  if (!raw) return ''
+  // % 和 _ 是 LIKE 的通配符，用户搜这两个字符时要当字面量
+  return '%' + raw.replace(/[\\%_]/g, (ch) => '\\' + ch) + '%'
+}
+
 async function handleList(request, env) {
   if (!(await isAuthed(request, env))) return json({ error: 'unauthorized' }, 401)
 
   await ensureSchema(env)
+
+  const url = new URL(request.url)
+
+  const requestedPer = Number(url.searchParams.get('per'))
+  const per = LIST_PER_CHOICES.includes(requestedPer) ? requestedPer : LIST_PER_DEFAULT
+
+  const filters = []
+  const values = []
+
+  const status = clean(url.searchParams.get('status'), 16)
+  if (status) {
+    if (!STATUSES.has(status)) return json({ error: 'invalid status' }, 400)
+    filters.push('status = ?')
+    values.push(status)
+  }
+  const category = clean(url.searchParams.get('category'), 32)
+  if (category) {
+    if (!CATEGORIES.includes(category)) return json({ error: 'invalid category' }, 400)
+    filters.push('category = ?')
+    values.push(category)
+  }
+  const kind = clean(url.searchParams.get('kind'), 8)
+  if (kind) {
+    if (!KINDS.has(kind)) return json({ error: 'invalid kind' }, 400)
+    filters.push('kind = ?')
+    values.push(kind)
+  }
+  const suspicious = clean(url.searchParams.get('suspicious'), 8)
+  if (suspicious === 'only') filters.push('suspicious = 1')
+  else if (suspicious === 'hide') filters.push('suspicious = 0')
+  else if (suspicious) return json({ error: 'invalid suspicious' }, 400)
+
+  const pattern = likePattern(url.searchParams.get('q'))
+  if (pattern) {
+    filters.push(
+      "(want LIKE ? ESCAPE '\\' OR scene LIKE ? ESCAPE '\\'" +
+      " OR article LIKE ? ESCAPE '\\' OR contact LIKE ? ESCAPE '\\')"
+    )
+    values.push(pattern, pattern, pattern, pattern)
+  }
+
+  const where = filters.length ? ' WHERE ' + filters.join(' AND ') : ''
+
+  const counted = await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback' + where)
+    .bind(...values)
+    .first()
+  const filtered = counted ? Number(counted.n) || 0 : 0
+  const pages = Math.max(1, Math.ceil(filtered / per))
+
+  const requestedPage = Number(url.searchParams.get('page'))
+  const rawPage =
+    Number.isFinite(requestedPage) && requestedPage >= 1 ? Math.floor(requestedPage) : 1
+  // 越界就夹到有效范围（比如刚把最后一页删空），别回一个空列表让人以为是筛选问题
+  const page = Math.min(rawPage, pages)
+
   const { results } = await env.DB.prepare(
     `SELECT id, ticket, category, kind, want, scene, article, contact, status,
             resolved_label, resolved_url, suspicious, flag_reason, created_at, updated_at
-       FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT ?`
+       FROM feedback` + where +
+    ' ORDER BY suspicious ASC, created_at DESC LIMIT ? OFFSET ?'
   )
-    .bind(LIST_MAX)
+    .bind(...values, per, (page - 1) * per)
     .all()
 
   const items = (results || []).map((row) => ({
@@ -856,25 +939,57 @@ async function handleList(request, env) {
     day: utc8Day(new Date(Number(row.created_at)))
   }))
 
-  const kindRows = await env.DB.prepare(
-    'SELECT kind, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY kind'
+  // 下面几条都是**全表**统计，跟当前筛选/分页无关：
+  // 顶部那几个数字是给人判断「还有多少活」的，不该跟着筛选一起跳。
+  const totals = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM feedback WHERE suspicious = 0'
+  ).first()
+  const flagRows = await env.DB.prepare(
+    'SELECT suspicious, flag_reason, COUNT(*) AS n FROM feedback GROUP BY suspicious, flag_reason'
   ).all()
-  const statusRows = await env.DB.prepare(
-    'SELECT category, status, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY category, status'
+  const kindStatusRows = await env.DB.prepare(
+    `SELECT kind, status, COUNT(*) AS n FROM feedback
+      WHERE suspicious = 0 GROUP BY kind, status`
+  ).all()
+  const categoryRows = await env.DB.prepare(
+    `SELECT category, status, COUNT(*) AS n FROM feedback
+      WHERE suspicious = 0 GROUP BY category, status`
   ).all()
 
+  const byStatus = { new: 0, planned: 0, done: 0, rejected: 0 }
   const byKind = { gap: 0, fix: 0 }
-  for (const row of kindRows.results || []) {
-    if (row.kind === 'gap' || row.kind === 'fix') byKind[row.kind] = Number(row.n) || 0
+  for (const row of kindStatusRows.results || []) {
+    const n = Number(row.n) || 0
+    if (row.kind === 'gap' || row.kind === 'fix') byKind[row.kind] += n
+    if (Object.prototype.hasOwnProperty.call(byStatus, row.status)) byStatus[row.status] += n
+  }
+
+  let suspiciousTotal = 0
+  let unverified = 0
+  let deletable = 0
+  for (const row of flagRows.results || []) {
+    if (Number(row.suspicious) !== 1) continue
+    const n = Number(row.n) || 0
+    suspiciousTotal += n
+    if (row.flag_reason === 'no_token' || row.flag_reason === 'verify_down') unverified += n
+    // 「删掉蜜罐与过快」实际会删掉的就是这两类
+    if (row.flag_reason === 'trap' || row.flag_reason === 'fast') deletable += n
   }
 
   return json(
     {
       items,
+      page,
+      per,
+      pages,
+      filtered,
       summary: {
-        total: items.filter((item) => !item.suspicious).length,
-        suspicious: items.filter((item) => item.suspicious).length,
-        byCategory: summarize(statusRows.results || []),
+        total: totals ? Number(totals.n) || 0 : 0,
+        suspicious: suspiciousTotal,
+        unverified,
+        deletable,
+        byStatus,
+        byCategory: summarize(categoryRows.results || []),
         byKind
       }
     },

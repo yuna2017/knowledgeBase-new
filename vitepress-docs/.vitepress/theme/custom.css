@@ -1230,10 +1230,44 @@ a.home-card:hover {
   flex: 1 1 200px;
 }
 
+/* 筛选结果计数：和「读取中…」同款，但它是常驻的一行 */
+.fb-audit__count {
+  margin-top: -6px;
+}
+
+/*
+ * 翻页。分页在服务端，每页默认 20 条 —— 一页塞上千条正文那种做法既卡浏览器，
+ * 也会把最老的、最该处理的那批挤出视野（见接口 handleList 的注释）。
+ */
+.fb-audit__pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 18px 0 8px;
+}
+
+.fb-audit__pager .fb-audit__ghost:disabled {
+  opacity: 0.45;
+  cursor: default;
+  border-color: var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+}
+
+.fb-audit__pager-info {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
 .fb-audit__list {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* 翻页/改筛选时列表原地变淡，而不是被清空 —— 页面高度不跳 */
+.fb-audit__list--loading {
+  opacity: 0.45;
 }
 
 .fb-audit__item {

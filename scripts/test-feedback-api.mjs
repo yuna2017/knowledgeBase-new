@@ -503,6 +503,130 @@ test('审计列表带出新增字段，并按「可疑排最后」返回', async
   assert.equal(data.summary.suspicious, 1)
 })
 
+/* ------------------------------------------------------------------ 审计列表：分页与筛选 */
+
+/** 绕过接口直接塞数据，用来造分页/筛选场景（走接口会被限频挡住） */
+let seedRun = 0
+function seedRows(total, fields = {}) {
+  seedRun += 1
+  const batch = String(seedRun).padStart(2, '0')
+  const statement = sqlite.prepare(
+    `INSERT INTO feedback
+       (ticket, category, kind, want, scene, status, suspicious, flag_reason, ip_hash, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+  for (let i = 0; i < total; i += 1) {
+    statement.run(
+      // ticket 上有唯一索引：同一次测试里 seedRows 可能被调多次，得带上批次号
+      'SEED' + batch + '-' + String(i).padStart(3, '0'),
+      fields.category ?? '其他',
+      fields.kind ?? 'gap',
+      (fields.want ?? '内容') + i,
+      fields.scene ?? '场景',
+      fields.status ?? 'new',
+      fields.suspicious ?? 0,
+      fields.flagReason ?? null,
+      'seed',
+      1000 + i,
+      1000 + i
+    )
+  }
+}
+
+async function listAs(query = '') {
+  const res = await onRequestGet(ctx(get('/api/feedback/list' + query, { Cookie: cookie })))
+  assert.equal(res.status, 200, 'list 应当返回 200，query=' + query)
+  return res.json()
+}
+
+test('审计列表分页：默认每页 20 条，越界页码夹回最后一页', async () => {
+  seedRows(45)
+
+  const first = await listAs()
+  assert.equal(first.items.length, 20, '默认每页 20 条 —— 一页塞上千条既卡浏览器也看不清')
+  assert.equal(first.page, 1)
+  assert.equal(first.per, 20)
+  assert.equal(first.pages, 3)
+  assert.equal(first.filtered, 45)
+
+  assert.equal((await listAs('?page=3')).items.length, 5)
+  assert.equal((await listAs('?page=99')).page, 3, '越界页码夹回最后一页，而不是回空列表')
+  assert.equal((await listAs('?page=0')).page, 1)
+
+  // 每页条数只认白名单，乱传就回默认值（防 ?per=100000）
+  assert.equal((await listAs('?per=5000')).per, 20)
+  assert.equal((await listAs('?per=50')).per, 50)
+  assert.equal((await listAs('?per=50')).items.length, 45)
+
+  // 翻页不该出现重复行
+  const page1 = (await listAs('?page=1&per=20')).items.map((item) => item.id)
+  const page2 = (await listAs('?page=2&per=20')).items.map((item) => item.id)
+  assert.equal(new Set([...page1, ...page2]).size, 40)
+})
+
+test('审计列表的筛选在服务端生效，非法值直接 400', async () => {
+  seedRows(30, { category: '宿舍' })
+  seedRows(5, { category: '图书馆', kind: 'fix', status: 'done' })
+
+  assert.equal((await listAs('?category=' + encodeURIComponent('图书馆'))).filtered, 5)
+  assert.ok(
+    (await listAs('?category=' + encodeURIComponent('图书馆'))).items.every(
+      (item) => item.category === '图书馆'
+    )
+  )
+  assert.equal((await listAs('?kind=fix')).filtered, 5)
+  assert.equal((await listAs('?status=done')).filtered, 5)
+  assert.equal(
+    (await listAs('?kind=fix&status=done&category=' + encodeURIComponent('图书馆'))).filtered,
+    5
+  )
+
+  for (const bad of ['?status=nope', '?kind=nope', '?category=nope', '?suspicious=nope']) {
+    const res = await onRequestGet(ctx(get('/api/feedback/list' + bad, { Cookie: cookie })))
+    assert.equal(res.status, 400, bad + ' 应当被拒，而不是静默返回全表')
+  }
+})
+
+test('审计列表的搜索词按字面量处理（% 和 _ 不当通配符）', async () => {
+  seedRows(3, { want: '百分之百' })
+  seedRows(2, { want: '别的' })
+
+  assert.equal((await listAs('?q=' + encodeURIComponent('百分之'))).filtered, 3)
+  // 没转义的话，一个 % 会把 5 条全捞出来
+  assert.equal((await listAs('?q=' + encodeURIComponent('%'))).filtered, 0)
+  assert.equal((await listAs('?q=' + encodeURIComponent('_'))).filtered, 0)
+})
+
+test('审计列表的「只看可疑 / 只看正常」', async () => {
+  seedRows(4)
+  seedRows(2, { suspicious: 1, flagReason: 'no_token' })
+
+  assert.equal((await listAs('?suspicious=only')).filtered, 2)
+  assert.equal((await listAs('?suspicious=hide')).filtered, 4)
+  assert.equal((await listAs()).filtered, 6)
+})
+
+test('summary 是全表统计：不跟着筛选和分页变', async () => {
+  seedRows(30, { category: '宿舍' })
+  seedRows(3, { suspicious: 1, flagReason: 'no_token' })
+  seedRows(2, { suspicious: 1, flagReason: 'trap' })
+
+  const page = await listAs('?category=' + encodeURIComponent('宿舍'))
+  assert.equal(page.filtered, 30, '筛选后的条数')
+  assert.equal(page.items.length, 20, '但一页只给 20 条')
+
+  const summary = page.summary
+  assert.equal(summary.total, 30, '正常条目是全表统计，不跟着筛选变')
+  assert.equal(summary.suspicious, 5)
+  assert.equal(summary.unverified, 3)
+  assert.equal(summary.deletable, 2, '批量删会删掉的是 trap / fast 那 2 条')
+  assert.deepEqual(summary.byStatus, { new: 30, planned: 0, done: 0, rejected: 0 })
+  assert.equal(summary.byKind.gap, 30)
+
+  // 顶部数字和列表条数不再是同一个东西（以前都在同一批 items 上算，超过上限就对不上）
+  assert.notEqual(page.filtered, summary.suspicious + page.items.length)
+})
+
 /* ------------------------------------------------------------------ 查询码与提交者自查 */
 
 const TICKET_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/
