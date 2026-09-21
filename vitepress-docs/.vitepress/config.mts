@@ -6,7 +6,7 @@ import {
 } from '@nolebase/vitepress-plugin-git-changelog/vite'
 import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-inline-link-preview/markdown-it'
 import { defineConfig } from 'vitepress'
-import { ORGANIZATION, QQ_GROUP } from './shared/contact'
+import { FEEDBACK, ORGANIZATION, QQ_GROUP } from './shared/contact'
 import { extractDescription, truncate } from './shared/markdown'
 
 /** 站点正式域名，改域名时只改这一处。用于 canonical、og:url 和 sitemap。 */
@@ -342,6 +342,8 @@ export default defineConfig({
         text: '参与维护',
         items: [
           { text: '贡献指南', link: '/CONTRIBUTING' },
+          { text: '缺什么？告诉我们', link: '/wanted' },
+          { text: '反馈执行状态', link: '/wanted-status' },
           { text: '仓库说明', link: '/README' },
           { text: '内容规范', link: '/CONTEXT' }
         ]
@@ -431,6 +433,7 @@ export default defineConfig({
       // 页脚在每一页都会显示，招新信息放这里既全站可见又不打断正文。
       // 群号本身做成链接：点得动，链接失效时数字也还在，可以手动搜索加群。
       message: [
+        `<a href="${FEEDBACK.path}">${FEEDBACK.label}</a>`,
         `加入我们：QQ 群 <a href="${QQ_GROUP.joinUrl}" target="_blank" rel="noreferrer">${QQ_GROUP.number}</a>`,
         '<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noreferrer">CC BY-NC 4.0</a>'
       ].join(' · '),

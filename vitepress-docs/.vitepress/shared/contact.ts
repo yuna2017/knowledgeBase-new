@@ -21,6 +21,24 @@ export const QQ_GROUP = {
 export const ORGANIZATION = '燕山大学大学生网络信息协会'
 
 /**
+ * 需求反馈入口。
+ *
+ * 和群号放在同一个文件里：页脚、导航和正文都指向这里，
+ * 改一处全站生效，不会出现某处还指着旧路径的情况。
+ *
+ * 收集页用原生表单提交（见 theme/FeedbackForm.vue），接口是文档站同源的
+ * /api/feedback —— 只要文档站能打开，接口域名就是可达的。
+ */
+export const FEEDBACK = {
+  /** 收集页 */
+  path: '/wanted',
+  /** 公开的执行状态页 */
+  statusPath: '/wanted-status',
+  /** 页脚那一行里显示的文字 */
+  label: '缺什么？告诉我们'
+}
+
+/**
  * 首页顶部招新横幅。
  *
  * 横幅组件（theme/RecruitBanner.vue）和需要展示招新信息的地方都读这里，

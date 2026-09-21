@@ -912,3 +912,390 @@ a.home-card:hover {
   height: auto;
   margin: 0 auto;
 }
+
+/* ---- 需求反馈表单（/wanted）---- */
+
+/*
+ * 表单在浏览器端 JS 没跑起来时也必须可用（见 FeedbackForm.vue 的说明：
+ * 模板里的 <form method="post"> 会被预渲染进 HTML）。所以这里只做外观，
+ * 不引入任何依赖客户端状态的规则。
+ */
+.feedback-form {
+  margin: 24px 0 8px;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+}
+
+.feedback-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.feedback-form__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.feedback-form__hint {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--vp-c-text-3);
+}
+
+.feedback-form__control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.feedback-form__control:focus-visible {
+  border-color: var(--vp-c-brand-1);
+  outline: 2px solid var(--vp-c-brand-soft);
+}
+
+.feedback-form__fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+}
+
+.feedback-form__fieldset legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.feedback-form__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/*
+ * 蜜罐字段：对人隐藏。刻意不用 display:none —— 那种写法会被一部分
+ * 爬虫识别并跳过，等于白设一个陷阱。
+ */
+.feedback-form__trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.feedback-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.feedback-form__submit {
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--vp-c-white);
+  background: var(--vp-c-brand-1);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feedback-form__submit:hover:not(:disabled) {
+  background: var(--vp-c-brand-2);
+}
+
+.feedback-form__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.feedback-form__ghost {
+  padding: 8px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.feedback-form__ghost:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.feedback-form__msg {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+}
+
+.feedback-form__msg:empty {
+  display: none;
+}
+
+.feedback-form__fallback {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+}
+
+/* ---- 需求反馈审计（/wanted-audit）---- */
+
+.fb-audit {
+  margin: 24px 0;
+}
+
+.fb-audit__hint {
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+
+.fb-audit__error {
+  padding: 12px;
+  border: 1px solid var(--vp-c-danger-1);
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.fb-audit__login {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.fb-audit__login-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fb-audit__login-input {
+  flex: 1 1 220px;
+  padding: 8px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 14px;
+}
+
+.fb-audit__login-button {
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--vp-c-white);
+  background: var(--vp-c-brand-1);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fb-audit__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.fb-audit__spacer {
+  flex: 1 1 auto;
+}
+
+.fb-audit__ghost {
+  padding: 6px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fb-audit__ghost:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.fb-audit__msg {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.fb-audit__msg:empty {
+  display: none;
+}
+
+.fb-audit__summary {
+  display: block;
+  width: 100%;
+  margin: 16px 0;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.fb-audit__summary th,
+.fb-audit__summary td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.fb-audit__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.fb-audit__filters select,
+.fb-audit__filters input {
+  padding: 6px 10px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 13px;
+}
+
+.fb-audit__filters input {
+  flex: 1 1 200px;
+}
+
+.fb-audit__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fb-audit__item {
+  padding: 14px 0;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.fb-audit__item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.fb-audit__id {
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.fb-audit__tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--vp-c-bg-soft);
+  font-size: 12px;
+}
+
+.fb-audit__tag--fix {
+  color: var(--vp-c-warning-1);
+}
+
+.fb-audit__time {
+  font-size: 12px;
+}
+
+.fb-audit__status {
+  padding: 4px 8px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 13px;
+}
+
+.fb-audit__want {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--vp-c-text-1);
+  white-space: pre-wrap;
+}
+
+.fb-audit__scene {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+  white-space: pre-wrap;
+}
+
+.fb-audit__contact {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--vp-c-text-3);
+}
+
+/* ---- 反馈执行状态（/wanted-status）---- */
+
+.fb-status {
+  margin: 20px 0;
+}
+
+.fb-status__note {
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.fb-status__note--stale {
+  padding: 8px 12px;
+  border: 1px solid var(--vp-c-warning-3);
+  border-radius: 8px;
+  background: var(--vp-c-warning-soft);
+  color: var(--vp-c-text-1);
+}
+
+.fb-status table {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  overflow-x: auto;
+  font-size: 14px;
+}
+
+.fb-status th,
+.fb-status td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.fb-status th {
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+}

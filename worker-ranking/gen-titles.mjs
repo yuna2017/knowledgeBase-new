@@ -3,7 +3,13 @@
  * 从 vitepress-docs 生成排行 Worker 的文章清单（src/page-titles.json）。
  *
  * 排除规则与站点 page-kind.ts 保持一致：
- * 首页、聚合页（/tags、/recent）、维护文档（/README、/CONTRIBUTING、/CONTEXT）不计入。
+ * 首页、聚合页（/tags、/recent）、维护文档
+ * （/README、/CONTRIBUTING、/CONTEXT，以及 /wanted 系列的反馈页）不计入。
+ *
+ * ⚠️ 这份名单是 page-kind.ts 里 MAINTENANCE_PATHS 的**手工副本**：
+ * 本脚本要跑在 CI 的 Node 20 上，没法直接 import 那个 .ts。所以
+ * **改了 page-kind.ts 的 MAINTENANCE_PATHS，就必须同步改下面的 MAINTENANCE_PATHS**，
+ * 漏改的后果是这些页面带着 0 阅读量混进内部排行看板。
  *
  * 每篇附带首次进入仓库的时间（date，即上传时间），排行页面用于展示。
  *
@@ -21,7 +27,15 @@ const docsRoot = resolve(projectRoot, '..', 'vitepress-docs')
 const SITE_URL = 'https://docs.yuna.team'
 
 const AGGREGATE_PATHS = new Set(['/tags', '/recent'])
-const MAINTENANCE_PATHS = new Set(['/README', '/CONTRIBUTING', '/CONTEXT'])
+const MAINTENANCE_PATHS = new Set([
+  '/README',
+  '/CONTRIBUTING',
+  '/CONTEXT',
+  '/wanted',
+  '/wanted-done',
+  '/wanted-status',
+  '/wanted-audit'
+])
 const FALLBACK_TITLES = {
   index: '首页',
   tags: '标签',

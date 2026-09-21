@@ -32,6 +32,7 @@ YUNA KnowledgeBase 是面向燕山大学师生的在线生活指南，由燕山�
 
 - [标签索引](/tags)
 - [内容术语与维护规范](/CONTEXT)
+- [需求反馈审计](/wanted-audit)（需口令；公开状态见[反馈执行状态](/wanted-status)）
 
 ## 本地运行
 

@@ -9,7 +9,8 @@
  *   有作者、标签和校准时间（这些照常显示），但同样不是知识库文章，
  *   不统计阅读量，也不进「最高阅读」和「随便看看」。
  *   导航页流量天然偏高，混进排行会把首页最显眼的位置让给入口页。
- * - 项目维护文档：仓库说明、贡献指南、内容规范。是真实页面，
+ * - 项目维护文档：仓库说明、贡献指南、内容规范，以及 /wanted 系列
+ *   （反馈收集、提交成功、公开状态、审计）。是真实页面，
  *   但不是面向读者的知识库文章，不该混进「最高阅读」排行。
  * - 其余即为知识库文章。
  */
@@ -24,8 +25,25 @@ const AGGREGATE_PATHS = new Set(['/tags', '/recent'])
  */
 const NAVIGATION_PATHS = new Set(['/tech-index', '/campus-index'])
 
-/** 面向维护者而非读者的文档 */
-const MAINTENANCE_PATHS = new Set(['/README', '/CONTRIBUTING', '/CONTEXT'])
+/**
+ * 面向维护者而非读者的文档。
+ *
+ * /wanted 系列（反馈收集、提交成功、公开状态、审计）都归在这里：
+ * 它们是功能页而不是知识库文章，不该进「最高阅读」和「随便看看」。
+ * 其中 /wanted-audit 还额外被 Google 等排除（frontmatter 里 noindex）。
+ *
+ * 注意这里只影响「计数 / 排行 / 抽取池」三件事：这些页面依然会显示
+ * 作者、标签和校准时间（与 /CONTRIBUTING 一致）。
+ */
+const MAINTENANCE_PATHS = new Set([
+  '/README',
+  '/CONTRIBUTING',
+  '/CONTEXT',
+  '/wanted',
+  '/wanted-done',
+  '/wanted-status',
+  '/wanted-audit'
+])
 
 /** 把站内地址或源文件路径统一成 `/xxx` 形式，便于比对 */
 function normalize(value: string): string {
