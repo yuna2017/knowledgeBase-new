@@ -116,5 +116,10 @@ vitepress-docs/.vitepress/dist/
 # TernJS port file
 .tern-port
 
+# 抓包文件（浏览器导出的 HAR）
+# 里面常有 Cookie、Authorization、请求体，随手 commit 就等于把凭据发到公开仓库，
+# 而且动辄几 MB。曾经有一次 HAR 就放在仓库根目录、差点被 git add -A 带进去。
+*.har
+
 # settings
 .obsidian
