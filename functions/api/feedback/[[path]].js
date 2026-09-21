@@ -5,27 +5,33 @@
  * （数据库 yuna-kb-views，database_id fa3ebf5a-5c7e-4c46-92a8-67f6bd65d2aa）。
  *
  * 路由（全部同源，前缀 /api/feedback）：
- *   POST /api/feedback             提交一条反馈。支持两种编码：
- *                                    application/json               → 返回 JSON
- *                                    application/x-www-form-urlencoded → 303 跳转（无 JS 兜底）
- *   POST /api/feedback/login       密码换会话 Cookie
- *   POST /api/feedback/logout      清除会话
- *   GET  /api/feedback/stats       公开聚合（只有分类 + 条数 + 状态，状态页实时读它）
- *   GET  /api/feedback/session     查询当前是否已登录
- *   GET  /api/feedback/list        审计明细（需登录）
- *   POST /api/feedback/status      改某条的状态（需登录）
- *   POST /api/feedback/delete      删除某条（需登录，用于清理垃圾）
+ *   POST /api/feedback               提交一条反馈。支持两种编码：
+ *                                      application/json                 → 返回 JSON
+ *                                      application/x-www-form-urlencoded → 303 跳转（无 JS 兜底）
+ *   POST /api/feedback/login         密码换会话 Cookie
+ *   POST /api/feedback/logout        清除会话
+ *   GET  /api/feedback/stats         公开聚合（分类 + 条数 + 状态 + 已上线链接）
+ *   GET  /api/feedback/session       查询当前是否已登录
+ *   GET  /api/feedback/list          审计明细（需登录）
+ *   POST /api/feedback/update        改状态 / 分类 / 已上线链接（需登录）
+ *   POST /api/feedback/delete        删单条，或一次删掉全部可疑条目（需登录）
  *
  * 必须在 Pages 项目设置里配置环境变量 `FEEDBACK_ADMIN_PASSWORD`：
  *   - 没配置时，审计接口一律返回 503，提交接口照常工作（不会把自己的后台锁死，
  *     也不会因为漏配密码而变成一个无鉴权的公开接口）
- *   - 本地开发放在**运行 wrangler 的目录**（项目根目录）下的 `.dev.vars`（已 gitignore）
+ *   - 本地开发放在运行 wrangler 的目录（项目根目录）下的 `.dev.vars`（已 gitignore）
  *
- * 设计取舍见 docs/feedback-channel-design.md：
- *   - 反垃圾用「蜜罐 + 填写耗时 + D1 限频」三件套，刻意不引入 Turnstile——
- *     Turnstile 会给提交路径再加两个 Cloudflare 依赖，而且与要规避的
- *     故障是相关的（Cloudflare 抖动时验证和接口一起挂）。
- *   - 只存 IP 的加盐哈希，不存原始 IP。
+ * 两条贯穿全文的原则：
+ *
+ *   1. **能给人看的，绝不静默丢掉。** 蜜罐命中、填得太快，这两件事都可能误判
+ *      （浏览器自动填充会填蜜罐字段；粘贴一段准备好的文字三秒就能交），所以
+ *      它们只把条目标成 `suspicious`，不阻止入库。真用户的内容一条都不能丢，
+ *      机器人那点垃圾由维护者在审计页一次性批量删掉。
+ *   2. **反垃圾不引入外部依赖。** 刻意不用 Turnstile：它会给提交路径再加两个
+ *      Cloudflare 依赖，而且与要规避的故障是相关的（Cloudflare 抖动时验证和
+ *      接口一起挂）。只有蜜罐 + 耗时 + 限频三样，全都本地可判。
+ *
+ * 设计取舍见 docs/feedback-channel-design.md。
  */
 
 const CATEGORIES = [
@@ -45,11 +51,21 @@ const STATUSES = new Set(['new', 'planned', 'done', 'rejected'])
 
 const WANT_MAX = 2000
 const SCENE_MAX = 1000
+const ARTICLE_MAX = 200
 const CONTACT_MAX = 200
-/** 打开表单到提交短于这个时长，判为脚本（仅在有 JS 提交 elapsed 时生效） */
+const LABEL_MAX = 80
+const URL_MAX = 300
+
+/** 短于这个时长提交，只标记为可疑，不丢（见文件头第 1 条原则） */
 const MIN_FILL_MS = 3000
-/** 同一来源每天最多提交条数 */
-const SUBMIT_PER_DAY = 10
+/**
+ * 限频：**按 IP 哈希**，而校园网出口通常是 NAT，成百上千人共用一个公网 IP，
+ * 所以额度必须给得宽松——卡的是脚本洪峰，不是学生。
+ * 收紧的话先看审计页的数据：COUNT(*) 与 COUNT(DISTINCT ip_hash) 的比值。
+ */
+const BURST_MAX = 10
+const BURST_WINDOW_MS = 10 * 60 * 1000
+const DAY_MAX = 60
 /** 登录失败多少次后锁一段时间 */
 const LOGIN_FAIL_MAX = 5
 const LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -212,52 +228,76 @@ async function ipHash(env, request) {
 
 /* ------------------------------------------------------------------ 建表 */
 
+/**
+ * ⚠️ 下面这段 DDL 是 `worker/schema.sql` 的手工副本。
+ * Pages Functions 里没有文件系统，读不到那个 .sql，只能抄一份。
+ *
+ * 为了不让两份定义漂移，`scripts/test-feedback-api.mjs` 里有一条断言：
+ * 把 worker/schema.sql 建出来的表结构和这里建出来的**逐列比对**，不一致就测试失败。
+ * 改任何一份都要同时改另一份，否则 CI 会红。
+ */
 let schemaReady = null
 
-/**
- * 表结构同时记在 worker/schema.sql 里；这里按需创建是为了让接口
- * 在 schema.sql 没同步执行时也能工作（与 views.js 的 daily_views 同一思路）。
- */
+function schemaStatements(db) {
+  return [
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS feedback (
+         id             INTEGER PRIMARY KEY AUTOINCREMENT,
+         category       TEXT    NOT NULL,
+         kind           TEXT    NOT NULL,
+         want           TEXT    NOT NULL,
+         scene          TEXT    NOT NULL,
+         article        TEXT,
+         contact        TEXT,
+         status         TEXT    NOT NULL DEFAULT 'new',
+         resolved_label TEXT,
+         resolved_url   TEXT,
+         suspicious     INTEGER NOT NULL DEFAULT 0,
+         ip_hash        TEXT,
+         created_at     INTEGER NOT NULL,
+         updated_at     INTEGER
+       )`
+    ),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC)'
+    ),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)'
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
+         ip           TEXT    PRIMARY KEY,
+         fails        INTEGER NOT NULL DEFAULT 0,
+         window_start INTEGER NOT NULL
+       )`
+    )
+  ]
+}
+
 function ensureSchema(env) {
   if (!schemaReady) {
-    schemaReady = env.DB.batch([
-      env.DB.prepare(
-        `CREATE TABLE IF NOT EXISTS feedback (
-           id         INTEGER PRIMARY KEY AUTOINCREMENT,
-           category   TEXT    NOT NULL,
-           kind       TEXT    NOT NULL,
-           want       TEXT    NOT NULL,
-           scene      TEXT    NOT NULL,
-           contact    TEXT,
-           status     TEXT    NOT NULL DEFAULT 'new',
-           ip_hash    TEXT,
-           created_at INTEGER NOT NULL
-         )`
-      ),
-      env.DB.prepare(
-        'CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC)'
-      ),
-      env.DB.prepare(
-        'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)'
-      ),
-      env.DB.prepare(
-        `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
-           ip           TEXT    PRIMARY KEY,
-           fails        INTEGER NOT NULL DEFAULT 0,
-           window_start INTEGER NOT NULL
-         )`
-      )
-    ]).catch(() => null)
+    schemaReady = env.DB.batch(schemaStatements(env.DB)).catch(() => null)
   }
   return schemaReady
 }
 
 /* ------------------------------------------------------------------ 提交 */
 
-/** 去掉首尾空白并折叠连续空行，避免有人用空白灌满字段 */
 function clean(value, max) {
   if (typeof value !== 'string') return ''
   return value.replace(/\r\n/g, '\n').trim().slice(0, max)
+}
+
+/**
+ * 只接受站内相对地址或 https 链接。
+ * 这是要写进公开状态页 href 的东西，不能让 `javascript:` 之类混进去。
+ */
+function cleanUrl(value) {
+  const raw = clean(value, URL_MAX)
+  if (!raw) return ''
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw
+  if (/^https:\/\/[^\s]+$/i.test(raw)) return raw
+  return ''
 }
 
 async function readFields(request) {
@@ -293,21 +333,29 @@ async function handleSubmit(context) {
 
   if (!fields) return fail(400, 'invalid body', '/wanted?error=1')
 
-  // 蜜罐：正常用户看不到这个字段。命中也当成功，只是不写库，免得脚本知道被识破。
-  if (typeof fields.website === 'string' && fields.website.trim() !== '') {
-    return succeed()
+  /*
+   * 以下两种情况只标记可疑、不丢弃：
+   *   - 蜜罐被填：浏览器自动填充有可能命中，真用户不该因此丢稿
+   *   - 填得太快：粘贴一段准备好的文字，三秒交上去很正常
+   * 标记之后由维护者在审计页判断，并有一键「删掉全部可疑」。
+   */
+  let suspicious = 0
+  const trap = clean(fields.fb_trap, 100)
+  if (trap) {
+    suspicious = 1
+    console.warn('[feedback] 蜜罐字段被填，标记为可疑但不丢弃')
   }
-
-  // 填写耗时：只有 JS 路径会带上 elapsed，不带就不检查（原生表单提交没有它）
   const elapsed = Number(fields.elapsed)
   if (Number.isFinite(elapsed) && elapsed > 0 && elapsed < MIN_FILL_MS) {
-    return succeed()
+    suspicious = 1
+    console.warn('[feedback] 提交耗时 ' + elapsed + 'ms，标记为可疑但不丢弃')
   }
 
   const category = clean(fields.category, 32)
   const kind = clean(fields.kind, 8)
   const want = clean(fields.want, WANT_MAX)
   const scene = clean(fields.scene, SCENE_MAX)
+  const article = clean(fields.article, ARTICLE_MAX)
   const contact = clean(fields.contact, CONTACT_MAX)
 
   if (!CATEGORIES.includes(category)) return fail(400, 'invalid category', '/wanted?error=1')
@@ -316,23 +364,39 @@ async function handleSubmit(context) {
   if (!scene) return fail(400, 'empty scene', '/wanted?error=1')
 
   const hash = await ipHash(env, request)
+  const now = Date.now()
 
   try {
     await ensureSchema(env)
-    const recent = await env.DB.prepare(
+
+    const burst = await env.DB.prepare(
       'SELECT COUNT(*) AS n FROM feedback WHERE ip_hash = ? AND created_at > ?'
     )
-      .bind(hash, Date.now() - 24 * 3600 * 1000)
+      .bind(hash, now - BURST_WINDOW_MS)
       .first()
-    if (recent && Number(recent.n) >= SUBMIT_PER_DAY) {
+    if (burst && Number(burst.n) >= BURST_MAX) {
+      return fail(429, 'too many submissions in a short time', '/wanted?error=rate')
+    }
+
+    const daily = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM feedback WHERE ip_hash = ? AND created_at > ?'
+    )
+      .bind(hash, now - 24 * 3600 * 1000)
+      .first()
+    if (daily && Number(daily.n) >= DAY_MAX) {
       return fail(429, 'too many submissions today', '/wanted?error=rate')
     }
 
     await env.DB.prepare(
-      `INSERT INTO feedback (category, kind, want, scene, contact, status, ip_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, 'new', ?, ?)`
+      `INSERT INTO feedback
+         (category, kind, want, scene, article, contact, status,
+          suspicious, ip_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`
     )
-      .bind(category, kind, want, scene, contact || null, hash, Date.now())
+      .bind(
+        category, kind, want, scene, article || null, contact || null,
+        suspicious, hash, now, now
+      )
       .run()
   } catch (error) {
     console.error('[feedback] 写入失败', error)
@@ -416,21 +480,12 @@ async function handleSession(request, env) {
 
 /**
  * 状态页用的聚合数据，公开。
- * 只返回「分类 + 条数 + 状态」，不含任何用户写的文字和联系方式。
+ * 只返回「分类 + 条数 + 状态」，外加维护者自己填的「已上线」标签和链接——
+ * 三者都不含用户写的原文和联系方式。可疑条目一律不计入。
  */
-async function handleStats(env) {
-  await ensureSchema(env)
-
-  const totals = await env.DB.prepare('SELECT COUNT(*) AS total FROM feedback').first()
-  const kinds = await env.DB.prepare(
-    'SELECT kind, COUNT(*) AS n FROM feedback GROUP BY kind'
-  ).all()
-  const { results } = await env.DB.prepare(
-    'SELECT category, status, COUNT(*) AS n FROM feedback GROUP BY category, status'
-  ).all()
-
+function summarize(rows) {
   const grouped = new Map()
-  for (const row of results || []) {
+  for (const row of rows) {
     const category = String(row.category)
     if (!grouped.has(category)) grouped.set(category, { category, total: 0, byStatus: {} })
     const bucket = grouped.get(category)
@@ -438,6 +493,27 @@ async function handleStats(env) {
     bucket.total += count
     bucket.byStatus[String(row.status)] = count
   }
+  return [...grouped.values()].sort((a, b) => b.total - a.total)
+}
+
+async function handleStats(env) {
+  await ensureSchema(env)
+
+  const totals = await env.DB.prepare(
+    'SELECT COUNT(*) AS total FROM feedback WHERE suspicious = 0'
+  ).first()
+  const kinds = await env.DB.prepare(
+    'SELECT kind, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY kind'
+  ).all()
+  const { results } = await env.DB.prepare(
+    `SELECT category, status, COUNT(*) AS n FROM feedback
+      WHERE suspicious = 0 GROUP BY category, status`
+  ).all()
+  const published = await env.DB.prepare(
+    `SELECT category, resolved_label, resolved_url FROM feedback
+      WHERE status = 'done' AND resolved_url IS NOT NULL AND resolved_url != ''
+      ORDER BY updated_at DESC LIMIT 50`
+  ).all()
 
   const byKind = { gap: 0, fix: 0 }
   for (const row of kinds.results || []) {
@@ -447,8 +523,13 @@ async function handleStats(env) {
   return json(
     {
       total: totals ? Number(totals.total) || 0 : 0,
-      byCategory: [...grouped.values()].sort((a, b) => b.total - a.total),
+      byCategory: summarize(results || []),
       byKind,
+      published: (published.results || []).map((row) => ({
+        category: String(row.category),
+        label: String(row.resolved_label || row.category),
+        url: String(row.resolved_url)
+      })),
       updatedAt: Date.now(),
       updatedAtText: utc8Stamp(Date.now())
     },
@@ -463,8 +544,9 @@ async function handleList(request, env) {
 
   await ensureSchema(env)
   const { results } = await env.DB.prepare(
-    `SELECT id, category, kind, want, scene, contact, status, created_at
-       FROM feedback ORDER BY created_at DESC LIMIT ?`
+    `SELECT id, category, kind, want, scene, article, contact, status,
+            resolved_label, resolved_url, suspicious, created_at, updated_at
+       FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT ?`
   )
     .bind(LIST_MAX)
     .all()
@@ -475,41 +557,45 @@ async function handleList(request, env) {
     kind: row.kind,
     want: row.want,
     scene: row.scene,
+    article: row.article || '',
     contact: row.contact || '',
     status: row.status,
+    resolvedLabel: row.resolved_label || '',
+    resolvedUrl: row.resolved_url || '',
+    suspicious: Number(row.suspicious) === 1,
     createdAt: Number(row.created_at),
     createdAtText: utc8Stamp(Number(row.created_at)),
     day: utc8Day(new Date(Number(row.created_at)))
   }))
 
-  // 按分类聚合，就是状态页要的那张表
-  const byCategory = {}
-  for (const item of items) {
-    if (!byCategory[item.category]) {
-      byCategory[item.category] = { category: item.category, total: 0, byStatus: {} }
-    }
-    const bucket = byCategory[item.category]
-    bucket.total += 1
-    bucket.byStatus[item.status] = (bucket.byStatus[item.status] || 0) + 1
+  const kindRows = await env.DB.prepare(
+    'SELECT kind, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY kind'
+  ).all()
+  const statusRows = await env.DB.prepare(
+    'SELECT category, status, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY category, status'
+  ).all()
+
+  const byKind = { gap: 0, fix: 0 }
+  for (const row of kindRows.results || []) {
+    if (row.kind === 'gap' || row.kind === 'fix') byKind[row.kind] = Number(row.n) || 0
   }
 
   return json(
     {
       items,
       summary: {
-        total: items.length,
-        byCategory: Object.values(byCategory).sort((a, b) => b.total - a.total),
-        byKind: {
-          gap: items.filter((item) => item.kind === 'gap').length,
-          fix: items.filter((item) => item.kind === 'fix').length
-        }
+        total: items.filter((item) => !item.suspicious).length,
+        suspicious: items.filter((item) => item.suspicious).length,
+        byCategory: summarize(statusRows.results || []),
+        byKind
       }
     },
     200
   )
 }
 
-async function handleStatusUpdate(context) {
+/** 改状态 / 分类 / 已上线链接。所有字段都可选，只改传上来的那些。 */
+async function handleUpdate(context) {
   const { request, env } = context
   if (!(await isAuthed(request, env))) return json({ error: 'unauthorized' }, 401)
 
@@ -520,12 +606,50 @@ async function handleStatusUpdate(context) {
     return json({ error: 'invalid json' }, 400)
   }
   const id = Number(body && body.id)
-  const status = body && body.status
   if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400)
-  if (!STATUSES.has(status)) return json({ error: 'invalid status' }, 400)
+
+  const sets = []
+  const values = []
+
+  if (body.status !== undefined) {
+    if (!STATUSES.has(body.status)) return json({ error: 'invalid status' }, 400)
+    sets.push('status = ?')
+    values.push(body.status)
+    // 从「已上线」退回别的状态时，把链接一并清掉，免得公开页留着一条过期链接
+    if (body.status !== 'done') {
+      sets.push('resolved_label = NULL', 'resolved_url = NULL')
+    }
+  }
+  if (body.category !== undefined) {
+    const category = clean(body.category, 32)
+    if (!CATEGORIES.includes(category)) return json({ error: 'invalid category' }, 400)
+    sets.push('category = ?')
+    values.push(category)
+  }
+  if (body.resolvedLabel !== undefined) {
+    sets.push('resolved_label = ?')
+    values.push(clean(body.resolvedLabel, LABEL_MAX) || null)
+  }
+  if (body.resolvedUrl !== undefined) {
+    const url = cleanUrl(body.resolvedUrl)
+    if (body.resolvedUrl && !url) {
+      return json({ error: 'invalid url：只接受站内 / 开头的路径或 https 链接' }, 400)
+    }
+    sets.push('resolved_url = ?')
+    values.push(url || null)
+  }
+
+  if (!sets.length) return json({ error: 'nothing to update' }, 400)
+
+  sets.push('updated_at = ?')
+  values.push(Date.now(), id)
 
   await ensureSchema(env)
-  await env.DB.prepare('UPDATE feedback SET status = ? WHERE id = ?').bind(status, id).run()
+  await env.DB.prepare(
+    'UPDATE feedback SET ' + sets.join(', ') + ' WHERE id = ?'
+  )
+    .bind(...values)
+    .run()
   return json({ ok: true }, 200)
 }
 
@@ -539,10 +663,17 @@ async function handleDelete(context) {
   } catch {
     return json({ error: 'invalid json' }, 400)
   }
-  const id = Number(body && body.id)
-  if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400)
 
   await ensureSchema(env)
+
+  // 一次性清掉全部可疑条目：蜜罐和耗时误判的代价由此兜住
+  if (body && body.allSuspicious === true) {
+    const result = await env.DB.prepare('DELETE FROM feedback WHERE suspicious = 1').run()
+    return json({ ok: true, deleted: Number(result.meta?.changes ?? 0) }, 200)
+  }
+
+  const id = Number(body && body.id)
+  if (!Number.isInteger(id) || id <= 0) return json({ error: 'invalid id' }, 400)
   await env.DB.prepare('DELETE FROM feedback WHERE id = ?').bind(id).run()
   return json({ ok: true }, 200)
 }
@@ -553,7 +684,7 @@ function resolveAction(url) {
   const path = url.pathname.replace(/\/+$/, '')
   if (path === '/api/feedback') return 'submit'
   const match = path.match(
-    /^\/api\/feedback\/(login|logout|session|list|status|delete|stats)$/
+    /^\/api\/feedback\/(login|logout|session|list|stats|update|delete)$/
   )
   return match ? match[1] : null
 }
@@ -585,7 +716,10 @@ export async function onRequestPost(context) {
   if (action === 'submit') return guard(() => handleSubmit(context))
   if (action === 'login') return guard(() => handleLogin(context))
   if (action === 'logout') return guard(async () => handleLogout())
-  if (action === 'status') return guard(() => handleStatusUpdate(context))
+  if (action === 'update') return guard(() => handleUpdate(context))
   if (action === 'delete') return guard(() => handleDelete(context))
   return json({ error: 'not found' }, 404)
 }
+
+/** 供测试脚本比对「这里和 worker/schema.sql 是不是同一份定义」 */
+export { schemaStatements, CATEGORIES, STATUSES }

@@ -1,7 +1,8 @@
 {
-  "_comment": "状态页的兜底数据，由 scripts/feedback-report.mjs --write 生成，请勿手工编辑。页面会实时拉取 /api/feedback/stats，只有拉不到时才显示这份快照。",
+  "_comment": "状态页的兜底数据，由 scripts/feedback-report.mjs --write 生成，请勿手工编辑。页面会实时拉取 /api/feedback/stats，只有拉不到时才显示这份快照。注意：这份快照为空 ≠ 一条反馈都没有，页面会区分这两种情况。",
   "total": 0,
   "byCategory": [],
   "byKind": { "gap": 0, "fix": 0 },
+  "published": [],
   "updatedAtText": ""
 }

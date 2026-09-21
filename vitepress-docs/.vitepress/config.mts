@@ -143,6 +143,33 @@ function renderedTitle(
  */
 const descriptionIssues = new Map<string, string>()
 
+/**
+ * frontmatter 里写了 `robots: noindex` 的页面，构建时收集，用于把它们挡在
+ * sitemap 之外。
+ *
+ * 两处不能自相矛盾：页面既然声明了 noindex，就是不想被收录；再把它列进
+ * sitemap，等于一边请爬虫来抓、一边叫它别收。`/wanted-audit` 和
+ * `/wanted-done` 就是这样两个页面。
+ *
+ * 从 frontmatter 反推而不是手写一份名单，是因为手写名单一定会漂移——
+ * `worker-ranking/gen-titles.mjs` 里那份 MAINTENANCE_PATHS 副本已经踩过一次：
+ * 新增页面时忘了同步，页面就带着 0 阅读量混进了排行看板。
+ */
+const noIndexPaths = new Set<string>()
+
+/**
+ * 页面源文件路径 → sitemap 里的 url 字段。
+ *
+ * 注意 sitemap 的 item.url 是**相对路径**（`wanted-audit`），不是完整地址；
+ * hostname 是最后交给 SitemapStream 拼的。这里必须和 VitePress 内部
+ * （chunk 里生成 items 那段）算得一模一样，所以去 `.md` 的规则也照抄：
+ * cleanUrls 为 true 时去掉后缀，否则换成 `.html`。
+ */
+function sitemapUrlOf(relativePath: string): string {
+  const stripped = relativePath.replace(/(^|\/)index\.md$/, '$1')
+  return stripped.replace(/\.md$/, '')
+}
+
 export default defineConfig({
   title: 'YUNA KnowledgeBase',
   description: '面向问题的燕大师生在线生活指南',
@@ -153,7 +180,11 @@ export default defineConfig({
 
   // 构建时生成 /sitemap.xml，lastUpdated 开启后会带上每页的 lastmod
   sitemap: {
-    hostname: SITE_URL
+    hostname: SITE_URL,
+    // 声明了 noindex 的页面不进 sitemap（名单由 transformPageData 收集，
+    // 见 noIndexPaths 的说明）。sitemap 在页面渲染之后生成，所以那时已经收齐了。
+    transformItems: (items) =>
+      items.filter((item) => !noIndexPaths.has(item.url))
   },
 
   vite: {
@@ -287,6 +318,20 @@ export default defineConfig({
     }
 
     const head = (pageData.frontmatter.head ??= [])
+
+    // 收集声明了 noindex 的页面，sitemap 里要剔除（见 noIndexPaths）
+    for (const tag of head) {
+      if (!Array.isArray(tag) || tag[0] !== 'meta') continue
+      const attrs = tag[1] as Record<string, unknown> | undefined
+      if (
+        attrs &&
+        attrs.name === 'robots' &&
+        String(attrs.content ?? '').includes('noindex')
+      ) {
+        noIndexPaths.add(sitemapUrlOf(pageData.relativePath))
+      }
+    }
+
     head.push(
       ['link', { rel: 'canonical', href: url }],
       ['meta', { property: 'og:type', content: isHome ? 'website' : 'article' }],

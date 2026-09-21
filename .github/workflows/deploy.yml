@@ -7,7 +7,32 @@ on:
   workflow_dispatch:  # 允许手动触发
 
 jobs:
+  # 需求反馈接口的回归测试。
+  #
+  # 单独一个 job 是因为它需要 Node ≥ 22.5（用 node:sqlite 垫假 D1），而构建固定在
+  # Node 20；两者各自用自己的版本，互不影响。测试只用 Node 内置模块，不用 npm ci。
+  #
+  # 放在 deploy.yml 而不是只放 pr-check.yml：这个仓库的日常是 owner 直接推 main，
+  # 根本不经过 PR 检查，只有挂在这里才拦得住。
+  test:
+    name: 需求反馈接口测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run feedback API tests
+        run: npm run test:feedback
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -56,6 +81,7 @@ jobs:
   # 阅读量 Worker 与排行 Worker：推送后自动重新生成文章清单
   # （标题 / 上传时间）并重新部署，保证排行统计随文档更新，无需手动 wrangler。
   deploy-workers:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

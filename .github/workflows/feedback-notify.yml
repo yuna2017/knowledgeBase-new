@@ -1,0 +1,87 @@
+name: 反馈待办提醒
+
+# 只做一件事：只要 D1 里出现「未看」的反馈，就开一个 issue 把维护者叫过来；
+# 全部处理完自动关掉。
+#
+# 为什么要这个：需求渠道最常见的死法不是没人填，而是填了没人管。收进来的东西
+# 没有被任何人注意到的通道，等于没做这个渠道。GitHub issue 顺带解决了通知
+# （issue 会发邮件），不用再引一套邮件或机器人。
+#
+# 唯一的 issue 用 `feedback` 标签认领：已经开着就不再新建、也不每天刷评论，
+# 避免变成噪声。
+
+on:
+  schedule:
+    # 每天 09:00（UTC+8）
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: feedback-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: 检查未处理的反馈
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 查询待办数量
+        id: check
+        run: node scripts/feedback-pending.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: 开 / 关待办 issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PENDING: ${{ steps.check.outputs.pending }}
+          OLDEST: ${{ steps.check.outputs.oldest }}
+          SUSPICIOUS: ${{ steps.check.outputs.suspicious }}
+        run: |
+          set -eu
+
+          gh label create feedback \
+            --color FBCA04 \
+            --description "需求反馈待办" \
+            --force >/dev/null
+
+          OPEN=$(gh issue list --label feedback --state open --limit 1 --json number --jq 'length')
+
+          if [ "$PENDING" -gt 0 ] && [ "$OPEN" = "0" ]; then
+            {
+              echo "有 **$PENDING** 条反馈还没人看（最早一条是 ${OLDEST:-未知}）。"
+              echo
+              echo "去审计页处理：https://docs.yuna.team/wanted-audit"
+              echo
+              echo "处理完（全部改成计划中 / 已上线 / 不采纳）之后，这个 issue 会在下一次检查时自动关闭。"
+              if [ "${SUSPICIOUS:-0}" -gt 0 ]; then
+                echo
+                echo "另外还有 **$SUSPICIOUS** 条被标成可疑（蜜罐或填得太快）。这些不会出现在公开统计里，"
+                echo "在审计页筛「只看可疑」，确认是垃圾就点「删掉全部可疑」。"
+              fi
+            } > /tmp/body.md
+            gh issue create \
+              --title "反馈待办：$PENDING 条未看" \
+              --label feedback \
+              --body-file /tmp/body.md
+          elif [ "$PENDING" -eq 0 ] && [ "$OPEN" != "0" ]; then
+            NUMBER=$(gh issue list --label feedback --state open --limit 1 --json number --jq '.[0].number')
+            gh issue close "$NUMBER" --comment "未看的反馈已经清空，先关掉。有新反馈会再开。"
+          else
+            echo "待办 $PENDING 条，已开的 issue：$OPEN 个，不需要动作。"
+          fi

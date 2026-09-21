@@ -23,18 +23,28 @@ CREATE INDEX IF NOT EXISTS idx_daily_views_day ON daily_views (day DESC);
 -- 由 Pages Function functions/api/feedback/[[path]].js 按需创建并读写，
 -- 记在这里是为了让建表和接口在同一处可查。ip_hash 是加盐 SHA-256，
 -- 只用于限频，**不存原始 IP**。
+--
+-- ⚠️ 这份建表语句在 functions/api/feedback/[[path]].js 的 schemaStatements()
+-- 里有一份手工副本（Pages Functions 没有文件系统，读不到这个文件）。
+-- scripts/test-feedback-api.mjs 会把两边建出来的表结构逐列比对，不一致就失败。
+-- 改这里必须同时改那边。
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS feedback (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  category   TEXT    NOT NULL,
-  kind       TEXT    NOT NULL,          -- gap（缺口） / fix（勘误）
-  want       TEXT    NOT NULL,
-  scene      TEXT    NOT NULL,
-  contact    TEXT,
-  status     TEXT    NOT NULL DEFAULT 'new',  -- new / planned / done / rejected
-  ip_hash    TEXT,
-  created_at INTEGER NOT NULL           -- epoch 毫秒
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  category       TEXT    NOT NULL,           -- 聚合用的分类，枚举见接口里的 CATEGORIES
+  kind           TEXT    NOT NULL,           -- gap（缺口） / fix（勘误）
+  want           TEXT    NOT NULL,
+  scene          TEXT    NOT NULL,
+  article        TEXT,                       -- kind=fix 时，要修正的是哪一篇
+  contact        TEXT,
+  status         TEXT    NOT NULL DEFAULT 'new',  -- new / planned / done / rejected
+  resolved_label TEXT,                       -- 已上线：给读者看的短标签
+  resolved_url   TEXT,                       -- 已上线：文章地址
+  suspicious     INTEGER NOT NULL DEFAULT 0,  -- 蜜罐命中或填得太快，只标记不丢弃
+  ip_hash        TEXT,
+  created_at     INTEGER NOT NULL,            -- epoch 毫秒
+  updated_at     INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);

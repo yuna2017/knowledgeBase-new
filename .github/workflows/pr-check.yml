@@ -13,6 +13,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 与 deploy.yml 里那个 test job 内容相同。之所以两边都留一份：PR 走这里，
+  # owner 直推 main 走那边，谁都不能少。改动时记得同步。
+  feedback-tests:
+    name: 需求反馈接口测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # 需要 Node ≥ 22.5（node:sqlite）；构建仍是 Node 20，两者互不影响
+          node-version: 24
+
+      - name: Run feedback API tests
+        run: npm run test:feedback
+
   docs-check:
     name: Markdown、链接与作者检查
     runs-on: ubuntu-latest

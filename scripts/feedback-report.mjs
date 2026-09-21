@@ -76,7 +76,7 @@ async function query(sql, params = []) {
   return first && Array.isArray(first.results) ? first.results : []
 }
 
-function buildStats(totals, kindRows, rows) {
+function buildStats(totals, kindRows, rows, publishedRows) {
   const grouped = new Map()
   for (const row of rows) {
     const category = String(row.category)
@@ -95,10 +95,16 @@ function buildStats(totals, kindRows, rows) {
   return {
     _comment:
       '状态页的兜底数据，由 scripts/feedback-report.mjs --write 生成，请勿手工编辑。' +
-      '页面会实时拉取 /api/feedback/stats，只有拉不到时才显示这份快照。',
+      '页面会实时拉取 /api/feedback/stats，只有拉不到时才显示这份快照。' +
+      '注意：这份快照为空 ≠ 一条反馈都没有。',
     total: totals.length ? Number(totals[0].total) || 0 : 0,
     byCategory: [...grouped.values()].sort((a, b) => b.total - a.total),
     byKind,
+    published: publishedRows.map((row) => ({
+      category: String(row.category),
+      label: String(row.resolved_label || row.category),
+      url: String(row.resolved_url)
+    })),
     updatedAtText: utc8(Date.now())
   }
 }
@@ -106,17 +112,22 @@ function buildStats(totals, kindRows, rows) {
 function printDetail(items) {
   if (!items.length) return
   console.log('')
-  console.log('明细（' + items.length + ' 条，新的在前）')
+  console.log('明细（' + items.length + ' 条，新的在前；可疑的排在最后）')
   for (const item of items) {
     console.log('')
     console.log(
-      '  #' + item.id + '  [' + (STATUS_LABEL[item.status] || item.status) + '] ' +
-      item.category + ' / ' + (item.kind === 'fix' ? '勘误' : '缺口') +
+      '  #' + item.id + '  [' + (STATUS_LABEL[item.status] || item.status) + ']' +
+      (Number(item.suspicious) === 1 ? ' [可疑]' : '') +
+      ' ' + item.category + ' / ' + (item.kind === 'fix' ? '勘误' : '缺口') +
       '  ' + utc8(Number(item.created_at))
     )
     console.log('    想要：' + String(item.want).replace(/\n+/g, ' / '))
     console.log('    场景：' + String(item.scene).replace(/\n+/g, ' / '))
+    if (item.article) console.log('    针对：' + item.article)
     if (item.contact) console.log('    联系：' + item.contact)
+    if (item.resolved_url) {
+      console.log('    已上线：' + (item.resolved_label || '(无标签)') + ' → ' + item.resolved_url)
+    }
   }
 }
 
@@ -124,12 +135,24 @@ async function main() {
   let totals
   let kindRows
   let rows
+  let publishedRows
+  let suspicious = 0
   try {
-    totals = await query('SELECT COUNT(*) AS total FROM feedback')
-    kindRows = await query('SELECT kind, COUNT(*) AS n FROM feedback GROUP BY kind')
-    rows = await query(
-      'SELECT category, status, COUNT(*) AS n FROM feedback GROUP BY category, status'
+    // 公开统计一律排除可疑条目（蜜罐误判的垃圾），审计明细里才看得到
+    totals = await query('SELECT COUNT(*) AS total FROM feedback WHERE suspicious = 0')
+    kindRows = await query(
+      'SELECT kind, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY kind'
     )
+    rows = await query(
+      'SELECT category, status, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY category, status'
+    )
+    publishedRows = await query(
+      `SELECT category, resolved_label, resolved_url FROM feedback
+        WHERE status = 'done' AND resolved_url IS NOT NULL AND resolved_url != ''
+        ORDER BY updated_at DESC LIMIT 50`
+    )
+    const sus = await query('SELECT COUNT(*) AS n FROM feedback WHERE suspicious = 1')
+    suspicious = Number((sus[0] || {}).n) || 0
   } catch (error) {
     const message = String(error && error.message ? error.message : error)
     if (/no such table/i.test(message)) {
@@ -140,7 +163,7 @@ async function main() {
     process.exit(1)
   }
 
-  const stats = buildStats(totals, kindRows, rows)
+  const stats = buildStats(totals, kindRows, rows, publishedRows)
 
   if (args.has('--json')) {
     console.log(JSON.stringify(stats, null, 2))
@@ -155,6 +178,11 @@ async function main() {
       console.log('  ' + row.category + '  ' + row.total + ' 条（' + parts + '）')
     }
     if (!stats.total) console.log('  （还没有反馈）')
+    if (suspicious) {
+      console.log('')
+      console.log('  另有 ' + suspicious + ' 条可疑（蜜罐或填得太快），不计入上面的数字。')
+      console.log('  确认是垃圾就去审计页筛「只看可疑」，点「删掉全部可疑」。')
+    }
   }
 
   if (args.has('--write')) {
@@ -166,8 +194,9 @@ async function main() {
   if (!args.has('--json') && !args.has('--no-detail')) {
     printDetail(
       await query(
-        `SELECT id, category, kind, want, scene, contact, status, created_at
-           FROM feedback ORDER BY created_at DESC LIMIT 200`
+        `SELECT id, category, kind, want, scene, article, contact, status,
+                resolved_label, resolved_url, suspicious, created_at
+           FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT 200`
       )
     )
   }

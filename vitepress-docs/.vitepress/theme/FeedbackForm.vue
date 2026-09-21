@@ -8,10 +8,13 @@
  *    是真实存在的：VitePress 会把组件渲染进预渲染的 HTML，所以在 JS 完全没加载成功
  *    （脚本被拦、超时、报错）的情况下，浏览器仍能原生提交这份表单，
  *    服务端返回 303 跳到 /wanted-done。JS 只是把体验变好。
+ *    所以**所有字段都无条件渲染**，「要修正哪一篇」不能做成 kind === 'fix' 才显示，
+ *    否则无 JS 的读者根本没机会填。
  * 2. **绝不丢输入**。提交失败不 reset 表单；输入过程写草稿到 localStorage，
  *    刷新 / 崩溃 / 误关标签都不丢；失败时给「重试」和「复制内容」两条退路，
  *    复制这条路完全不依赖网络。
- * 3. 蜜罐字段 `website` 对用户隐藏，脚本会填；服务端命中就当成功但丢弃。
+ * 3. 蜜罐字段对用户隐藏，脚本会填。服务端只把它标成「可疑」，**不丢**——
+ *    浏览器自动填充有可能命中，真用户不该因此白填。
  */
 import { onMounted, ref } from 'vue'
 
@@ -28,8 +31,8 @@ const CATEGORIES = [
   '其他'
 ]
 
-const STORAGE_DRAFT = 'kb-feedback-draft-v1'
-const STORAGE_PENDING = 'kb-feedback-pending-v1'
+const STORAGE_DRAFT = 'kb-feedback-draft-v2'
+const STORAGE_PENDING = 'kb-feedback-pending-v2'
 const MAX_ATTEMPTS = 3
 
 /** 与 shared/contact.ts 保持一致：提交不上时的最终退路 */
@@ -42,8 +45,9 @@ const category = ref('')
 const kind = ref('gap')
 const want = ref('')
 const scene = ref('')
+const article = ref('')
 const contact = ref('')
-const website = ref('') // 蜜罐
+const trap = ref('') // 蜜罐
 
 const sending = ref(false)
 const message = ref('')
@@ -62,8 +66,9 @@ function collect() {
     kind: kind.value,
     want: want.value,
     scene: scene.value,
+    article: article.value,
     contact: contact.value,
-    website: website.value,
+    fb_trap: trap.value,
     elapsed: Date.now() - startedAt
   }
 }
@@ -78,7 +83,14 @@ function saveDraft() {
   try {
     localStorage.setItem(
       STORAGE_DRAFT,
-      JSON.stringify({ category: category.value, kind: kind.value, want: want.value, scene: scene.value, contact: contact.value })
+      JSON.stringify({
+        category: category.value,
+        kind: kind.value,
+        want: want.value,
+        scene: scene.value,
+        article: article.value,
+        contact: contact.value
+      })
     )
   } catch {
     // 隐私模式下 localStorage 可能不可写，忽略即可
@@ -99,6 +111,7 @@ function restoreDraft() {
     if (saved.kind === 'gap' || saved.kind === 'fix') kind.value = saved.kind
     if (typeof saved.want === 'string') want.value = saved.want
     if (typeof saved.scene === 'string') scene.value = saved.scene
+    if (typeof saved.article === 'string') article.value = saved.article
     if (typeof saved.contact === 'string') contact.value = saved.contact
   } catch {
     // 草稿坏了就当没有
@@ -189,18 +202,18 @@ function retry() {
 
 function buildPlainText() {
   const data = collect()
-  return [
+  const lines = [
     '【YUNA 知识库 · 需求反馈】',
     '分类：' + (data.category || '（未选）'),
     '类型：' + (KIND_LABEL[data.kind] || data.kind),
     '想要什么 / 缺什么：',
-    data.want,
-    '',
-    '什么场景下遇到的：',
-    data.scene,
-    '',
-    '联系方式：' + (data.contact || '（未填）')
-  ].join('\n')
+    data.want
+  ]
+  if (data.article.trim()) {
+    lines.push('', '要修正的内容：', data.article)
+  }
+  lines.push('', '什么场景下遇到的：', data.scene, '', '联系方式：' + (data.contact || '（未填）'))
+  return lines.join('\n')
 }
 
 async function copyToClipboard() {
@@ -214,7 +227,6 @@ async function copyToClipboard() {
   } catch {
     // 落到下面的兜底方案
   }
-  // 老浏览器 / 非安全上下文的兜底
   const area = document.createElement('textarea')
   area.value = text
   area.setAttribute('readonly', '')
@@ -285,77 +297,102 @@ onMounted(() => {
     @input="saveDraft"
     @change="saveDraft"
   >
-    <div class="feedback-form__row">
-      <label class="feedback-form__label" for="fb-category">和哪一块有关</label>
-      <select id="fb-category" v-model="category" class="feedback-form__control" name="category" required>
-        <option value="" disabled>请选择</option>
-        <option v-for="item in CATEGORIES" :key="item" :value="item">{{ item }}</option>
-      </select>
-    </div>
+    <fieldset class="feedback-form__group">
+      <legend class="feedback-form__group-title">你想说的是</legend>
 
-    <fieldset class="feedback-form__row feedback-form__fieldset">
-      <legend class="feedback-form__label">类型</legend>
-      <label class="feedback-form__radio">
-        <input v-model="kind" type="radio" name="kind" value="gap" />
-        <span>站里还没有（缺口）</span>
-      </label>
-      <label class="feedback-form__radio">
-        <input v-model="kind" type="radio" name="kind" value="fix" />
-        <span>已有内容需要修正（勘误）</span>
-      </label>
+      <div class="feedback-form__row">
+        <label class="feedback-form__label" for="fb-category">和哪一块有关</label>
+        <select id="fb-category" v-model="category" class="feedback-form__control feedback-form__select" name="category" required>
+          <option value="" disabled>请选择</option>
+          <option v-for="item in CATEGORIES" :key="item" :value="item">{{ item }}</option>
+        </select>
+      </div>
+
+      <fieldset class="feedback-form__fieldset">
+        <legend class="feedback-form__label">类型</legend>
+        <div class="feedback-form__radios">
+          <label class="feedback-form__radio">
+            <input v-model="kind" type="radio" name="kind" value="gap" />
+            <span>站里还没有</span>
+          </label>
+          <label class="feedback-form__radio">
+            <input v-model="kind" type="radio" name="kind" value="fix" />
+            <span>已有内容要修正</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="feedback-form__row">
+        <label class="feedback-form__label" for="fb-want">想要什么 / 缺什么</label>
+        <textarea
+          id="fb-want"
+          v-model="want"
+          class="feedback-form__control"
+          name="want"
+          rows="3"
+          maxlength="2000"
+          required
+          placeholder="一句话说清就行，比如「校园卡丢了怎么补办」"
+        />
+      </div>
+
+      <div class="feedback-form__row">
+        <label class="feedback-form__label" for="fb-scene">
+          什么场景下遇到的
+          <span class="feedback-form__hint">这一栏最有用，能决定这条反馈能不能落地</span>
+        </label>
+        <textarea
+          id="fb-scene"
+          v-model="scene"
+          class="feedback-form__control"
+          name="scene"
+          rows="3"
+          maxlength="1000"
+          required
+          placeholder="比如「饭卡在食堂刷不了，翻遍站里没找到补办流程」"
+        />
+      </div>
+
+      <div class="feedback-form__row">
+        <label class="feedback-form__label" for="fb-article">
+          要修正哪一篇
+          <span class="feedback-form__hint">选了上面第二项就填这里</span>
+        </label>
+        <input
+          id="fb-article"
+          v-model="article"
+          class="feedback-form__control"
+          name="article"
+          type="text"
+          maxlength="200"
+          placeholder="文章标题或站内地址，比如 /campus-network-vpn"
+        />
+      </div>
     </fieldset>
 
-    <div class="feedback-form__row">
-      <label class="feedback-form__label" for="fb-want">想要什么 / 缺什么</label>
-      <textarea
-        id="fb-want"
-        v-model="want"
-        class="feedback-form__control"
-        name="want"
-        rows="3"
-        maxlength="2000"
-        required
-        placeholder="一句话说清就行，比如「校园卡丢了怎么补办」"
-      />
-    </div>
+    <fieldset class="feedback-form__group">
+      <legend class="feedback-form__group-title">方便的话</legend>
 
-    <div class="feedback-form__row">
-      <label class="feedback-form__label" for="fb-scene">
-        什么场景下遇到的
-        <span class="feedback-form__hint">这一栏最有用：它决定了这条反馈能不能落地</span>
-      </label>
-      <textarea
-        id="fb-scene"
-        v-model="scene"
-        class="feedback-form__control"
-        name="scene"
-        rows="3"
-        maxlength="1000"
-        required
-        placeholder="比如「饭卡在食堂刷不了，翻遍站内没找到补办流程」"
-      />
-    </div>
+      <div class="feedback-form__row">
+        <label class="feedback-form__label" for="fb-contact">
+          联系方式
+          <span class="feedback-form__hint">选填；只用于向你确认细节，不会公开</span>
+        </label>
+        <input
+          id="fb-contact"
+          v-model="contact"
+          class="feedback-form__control"
+          name="contact"
+          type="text"
+          maxlength="200"
+          autocomplete="off"
+        />
+      </div>
+    </fieldset>
 
-    <div class="feedback-form__row">
-      <label class="feedback-form__label" for="fb-contact">
-        联系方式
-        <span class="feedback-form__hint">选填；只用于向你确认细节，不会公开</span>
-      </label>
-      <input
-        id="fb-contact"
-        v-model="contact"
-        class="feedback-form__control"
-        name="contact"
-        type="text"
-        maxlength="200"
-        autocomplete="off"
-      />
-    </div>
-
-    <!-- 蜜罐：对用户隐藏，脚本会填。命中当成功处理但丢弃 -->
+    <!-- 蜜罐：对用户隐藏，脚本会填。字段名刻意取成自动填充认不出来的样子 -->
     <div class="feedback-form__trap" aria-hidden="true">
-      <label for="fb-website">网址</label>
-      <input id="fb-website" v-model="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+      <input v-model="trap" name="fb_trap" type="text" tabindex="-1" autocomplete="off" />
     </div>
 
     <div class="feedback-form__actions">

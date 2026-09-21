@@ -965,11 +965,34 @@ a.home-card:hover {
   outline: 2px solid var(--vp-c-brand-soft);
 }
 
+/*
+ * 外层 fieldset 是分组，内层 fieldset 是单选钮组。
+ * **两层都刻意不用 display: flex** —— flex 容器里的 <legend> 会被拉出正常流，
+ * 各浏览器表现不一致。flex 只加在装单选钮的内层 div 上。
+ */
+.feedback-form__group {
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.feedback-form__group + .feedback-form__group {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.feedback-form__group-title {
+  padding: 0;
+  margin-bottom: 14px;
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
 .feedback-form__fieldset {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 18px;
+  margin: 0 0 18px;
   padding: 0;
   border: 0;
 }
@@ -977,6 +1000,12 @@ a.home-card:hover {
 .feedback-form__fieldset legend {
   margin-bottom: 6px;
   padding: 0;
+}
+
+.feedback-form__radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .feedback-form__radio {
@@ -1151,22 +1180,6 @@ a.home-card:hover {
   display: none;
 }
 
-.fb-audit__summary {
-  display: block;
-  width: 100%;
-  margin: 16px 0;
-  overflow-x: auto;
-  font-size: 13px;
-}
-
-.fb-audit__summary th,
-.fb-audit__summary td {
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--vp-c-divider);
-  text-align: left;
-  white-space: nowrap;
-}
-
 .fb-audit__filters {
   display: flex;
   flex-wrap: wrap;
@@ -1279,23 +1292,264 @@ a.home-card:hover {
   color: var(--vp-c-text-1);
 }
 
-.fb-status table {
-  display: block;
-  width: 100%;
+/*
+ * 表格横向滚动交给外层容器，**不要给 <table> 加 display: block**——
+ * 那会破坏表格盒模型，宽度变成内容驱动、width: 100% 也失效。
+ */
+.fb-status__scroll,
+.fb-audit__scroll {
   margin: 12px 0;
   overflow-x: auto;
-  font-size: 14px;
+}
+
+.fb-status table,
+.fb-audit__summary {
+  width: 100%;
+  margin: 0;
+  font-size: 13px;
 }
 
 .fb-status th,
-.fb-status td {
+.fb-status td,
+.fb-audit__summary th,
+.fb-audit__summary td {
   padding: 8px 14px;
   border-bottom: 1px solid var(--vp-c-divider);
   text-align: left;
   white-space: nowrap;
 }
 
-.fb-status th {
+.fb-status th,
+.fb-audit__summary th {
   font-weight: 600;
   color: var(--vp-c-text-2);
 }
+
+/* 读不到接口 + 兜底也是空的：说明「未知」，不能说成「还没有」 */
+.fb-status__unknown {
+  padding: 12px 14px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* .vp-doc 前缀是为了压过默认主题的 `.vp-doc h2`（带下边框和大上边距） */
+.vp-doc .fb-status__subtitle {
+  margin: 24px 0 8px;
+  padding-top: 0;
+  border-top: 0;
+  font-size: 16px;
+}
+
+.fb-status__published {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fb-status__published li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+  font-size: 14px;
+}
+
+.fb-status__published-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+}
+
+/*
+ * 加载提示只占一行，**不覆盖已有内容**：兜底数据是直接进预渲染 HTML 的，
+ * 用骨架把它盖掉的话，浏览器端 JS 没跑起来时这一页就永远停在骨架上了。
+ */
+.fb-status__loading {
+  font-size: 13px;
+  color: var(--vp-c-text-3);
+}
+
+/* ---- select 的下拉箭头 ----
+ *
+ * VitePress 的 base.css 里有 `select { -webkit-appearance: none }`，但**没有
+ * 补任何替代箭头**。默认主题自己的控件另有样式，我们用自定义 class 的 select
+ * 就会变成一个「看起来像文本框、其实点得开」的方块。这里手动补一个。
+ *
+ * 用两套 data URI 而不是 currentColor —— background-image 里用不了 currentColor，
+ * 所以深色模式单独换一版描边颜色。
+ */
+.feedback-form__select,
+.fb-audit__filters select,
+.fb-audit__category,
+.fb-audit__status {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 30px;
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+html.dark .feedback-form__select,
+html.dark .fb-audit__filters select,
+html.dark .fb-audit__category,
+html.dark .fb-audit__status {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/*
+ * 焦点提示。
+ *
+ * base.css 里明写了 `input:focus, textarea:focus, select:focus { outline: none }`，
+ * 不给自定义样式的话键盘用户根本看不见焦点在哪。按钮不用管——base.css 给它们
+ * 留了 UA 的焦点圈。
+ */
+.feedback-form__control:focus-visible,
+.feedback-form__radio input:focus-visible,
+.fb-audit__login-input:focus-visible,
+.fb-audit__filters input:focus-visible,
+.fb-audit__filters select:focus-visible,
+.fb-audit__category:focus-visible,
+.fb-audit__status:focus-visible,
+.fb-audit__resolve input:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 1px;
+  border-color: var(--vp-c-brand-1);
+}
+
+/* ---- 审计页：分类选择、状态色、已上线链接、可疑标记 ---- */
+
+.fb-audit__category {
+  max-width: 8.5em;
+  padding: 3px 26px 3px 8px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background-color: var(--vp-c-bg);
+  font-size: 13px;
+}
+
+/*
+ * 状态色。四个状态在下拉框里长得一样的话，扫一眼看不出哪些还没处理，
+ * 所以按状态给下拉框上色。左侧竖条同步上色，列表整体就能一眼分区。
+ */
+.fb-audit__status {
+  border-width: 1px;
+  border-style: solid;
+  font-weight: 600;
+}
+
+.fb-audit__status--new {
+  border-color: var(--vp-c-danger-1);
+  color: var(--vp-c-danger-1);
+}
+
+.fb-audit__status--planned {
+  border-color: var(--vp-c-warning-1);
+  color: var(--vp-c-warning-1);
+}
+
+.fb-audit__status--done {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.fb-audit__status--rejected {
+  border-color: var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+}
+
+.fb-audit__item {
+  border-left: 3px solid transparent;
+  padding-left: 12px;
+}
+
+.fb-audit__item--new {
+  border-left-color: var(--vp-c-danger-1);
+}
+
+.fb-audit__item--planned {
+  border-left-color: var(--vp-c-warning-1);
+}
+
+.fb-audit__item--done {
+  border-left-color: var(--vp-c-brand-1);
+}
+
+.fb-audit__item--rejected {
+  border-left-color: var(--vp-c-divider);
+}
+
+.fb-audit__suspect,
+.fb-audit__suspect-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--vp-c-danger-soft);
+  color: var(--vp-c-danger-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fb-audit__ghost--danger:hover {
+  border-color: var(--vp-c-danger-1);
+  color: var(--vp-c-danger-1);
+}
+
+.fb-audit__article {
+  margin: 6px 0 0;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 「已上线」才出现：给读者看的标签 + 链接 */
+.fb-audit__resolve {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--vp-c-brand-3);
+  border-radius: 8px;
+  background: var(--vp-c-brand-soft);
+}
+
+.fb-audit__resolve input {
+  flex: 1 1 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  color: var(--vp-c-text-1);
+  background: var(--vp-c-bg);
+  font-size: 13px;
+}
+
+/* 窄屏：头部那一行元素太多，让操作区独占一行，别挤成锯齿 */
+@media (max-width: 640px) {
+  .fb-audit__item-head {
+    row-gap: 6px;
+  }
+
+  .fb-audit__spacer {
+    display: none;
+  }
+
+  .fb-audit__item-head .fb-audit__status,
+  .fb-audit__item-head .fb-audit__ghost {
+    margin-left: 0;
+  }
+
+  .fb-audit__resolve input {
+    flex: 1 1 100%;
+  }
+}
+

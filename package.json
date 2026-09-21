@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vitepress dev vitepress-docs",
     "check:docs": "node scripts/check-docs.mjs",
+    "test:feedback": "node --no-warnings scripts/test-feedback-api.mjs",
     "prebuild": "npm run check:docs",
     "build": "vitepress build vitepress-docs",
     "preview": "vitepress preview vitepress-docs"

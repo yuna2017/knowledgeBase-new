@@ -9,6 +9,9 @@
  * 鉴权由 functions/api/feedback/[[path]].js 负责：
  * 密码来自环境变量 FEEDBACK_ADMIN_PASSWORD，比较是定长的，
  * 连续失败 5 次锁定 15 分钟。
+ *
+ * 维护者在这里能做的事：看清每条 → 改分类（分类是聚合的键，选错会让统计错位）
+ * → 改状态 → 填「已上线」的标签和链接（会出现在公开状态页）→ 删单条或一键清掉可疑。
  */
 import { computed, onMounted, ref } from 'vue'
 
@@ -18,32 +21,37 @@ interface FeedbackItem {
   kind: 'gap' | 'fix' | string
   want: string
   scene: string
+  article: string
   contact: string
   status: string
+  resolvedLabel: string
+  resolvedUrl: string
+  suspicious: boolean
   createdAt: number
   createdAtText: string
-  day: string
-}
-
-interface CategorySummary {
-  category: string
-  total: number
-  byStatus: Record<string, number>
 }
 
 interface Summary {
   total: number
-  byCategory: CategorySummary[]
+  suspicious: number
+  byCategory: Array<{ category: string; total: number; byStatus: Record<string, number> }>
   byKind: { gap: number; fix: number }
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  new: '未看',
-  planned: '计划中',
-  done: '已上线',
-  rejected: '不采纳'
-}
-const STATUS_ORDER = ['new', 'planned', 'done', 'rejected']
+const CATEGORIES = [
+  '校园网', '一卡通', '图书馆', '宿舍', '食堂快递',
+  '教务学籍', '校医院', '安全防骗', '技术资源', '其他'
+]
+
+const STATUSES = [
+  { key: 'new', label: '未看' },
+  { key: 'planned', label: '计划中' },
+  { key: 'done', label: '已上线' },
+  { key: 'rejected', label: '不采纳' }
+]
+const STATUS_LABEL: Record<string, string> = Object.fromEntries(
+  STATUSES.map((item) => [item.key, item.label])
+)
 
 const authed = ref<boolean | null>(null)
 const configured = ref(true)
@@ -55,24 +63,29 @@ const busy = ref(false)
 const message = ref('')
 
 const filterCategory = ref('')
-const filterStatus = ref('')
 const filterKind = ref('')
+const filterStatus = ref('')
+const filterSuspicious = ref('')
 const keyword = ref('')
 
 const categories = computed(() => {
-  const set = new Set<string>()
+  const set = new Set<string>(CATEGORIES)
   for (const item of items.value) set.add(item.category)
-  return [...set].sort()
+  return [...set]
 })
 
 const visible = computed(() => {
   const needle = keyword.value.trim().toLowerCase()
   return items.value.filter((item) => {
+    if (filterSuspicious.value === 'only' && !item.suspicious) return false
+    if (filterSuspicious.value === 'hide' && item.suspicious) return false
     if (filterCategory.value && item.category !== filterCategory.value) return false
     if (filterStatus.value && item.status !== filterStatus.value) return false
     if (filterKind.value && item.kind !== filterKind.value) return false
     if (needle) {
-      const haystack = (item.want + '\n' + item.scene + '\n' + item.contact).toLowerCase()
+      const haystack = (
+        item.want + '\n' + item.scene + '\n' + item.article + '\n' + item.contact
+      ).toLowerCase()
       if (haystack.indexOf(needle) < 0) return false
     }
     return true
@@ -85,13 +98,13 @@ async function request(url: string, init?: RequestInit) {
     headers: { Accept: 'application/json', ...(init && init.headers ? init.headers : {}) },
     ...init
   })
-  let data: any = null
+  let data: unknown = null
   try {
     data = await res.json()
   } catch {
     data = null
   }
-  return { ok: res.ok, status: res.status, data }
+  return { ok: res.ok, status: res.status, data: data as any }
 }
 
 async function checkSession() {
@@ -123,8 +136,7 @@ async function login() {
     return
   }
   if (status === 429) {
-    const wait = data && data.retryAfterMinutes ? data.retryAfterMinutes : 15
-    message.value = '失败次数过多，请 ' + wait + ' 分钟后再试。'
+    message.value = '失败次数过多，请 ' + (data?.retryAfterMinutes ?? 15) + ' 分钟后再试。'
     return
   }
   if (status === 503) {
@@ -159,20 +171,51 @@ async function load() {
   message.value = '读取失败，请稍后重试。'
 }
 
+/** 只把改动的字段发上去，避免覆盖别人（或另一个标签页）刚做的改动 */
+async function patch(item: FeedbackItem, fields: Record<string, unknown>) {
+  const { ok, status, data } = await request('/api/feedback/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: item.id, ...fields })
+  })
+  if (!ok) {
+    message.value = '保存失败：' + (data?.error || ('HTTP ' + status))
+    await load()
+    return false
+  }
+  return true
+}
+
 async function setStatus(item: FeedbackItem, status: string) {
   const previous = item.status
   item.status = status
-  const { ok } = await request('/api/feedback/status', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: item.id, status })
-  })
-  if (!ok) {
-    item.status = previous
-    message.value = '状态保存失败。'
-    return
+  if (status !== 'done') {
+    item.resolvedLabel = ''
+    item.resolvedUrl = ''
   }
-  await load()
+  if (!(await patch(item, { status }))) item.status = previous
+  else await load()
+}
+
+async function setCategory(item: FeedbackItem, category: string) {
+  const previous = item.category
+  item.category = category
+  if (!(await patch(item, { category }))) item.category = previous
+  else await load()
+}
+
+async function saveResolution(item: FeedbackItem) {
+  if (
+    await patch(item, {
+      resolvedLabel: item.resolvedLabel,
+      resolvedUrl: item.resolvedUrl
+    })
+  ) {
+    message.value = item.resolvedUrl
+      ? '已保存，会显示在公开状态页上。'
+      : '已清空这条的公开链接。'
+    await load()
+  }
 }
 
 async function remove(item: FeedbackItem) {
@@ -189,14 +232,30 @@ async function remove(item: FeedbackItem) {
   await load()
 }
 
-/** 数据归属：随时能把全部反馈导成纯文本带走 */
+async function removeAllSuspicious() {
+  const count = summary.value?.suspicious ?? 0
+  if (!count) {
+    message.value = '没有可疑条目。'
+    return
+  }
+  if (!window.confirm('一次删掉全部 ' + count + ' 条可疑反馈？删掉之后无法恢复。')) return
+  const { ok, data } = await request('/api/feedback/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allSuspicious: true })
+  })
+  message.value = ok ? '已删除 ' + (data?.deleted ?? count) + ' 条。' : '删除失败。'
+  await load()
+}
+
+/** 数据归属：随时能把筛出来的这部分导成纯文本带走 */
 function buildMarkdown() {
   const lines = [
-    '| id | 时间 | 分类 | 类型 | 想要什么 | 场景 | 联系方式 | 状态 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |'
+    '| id | 时间 | 分类 | 类型 | 想要什么 | 场景 | 针对 | 联系方式 | 状态 | 可疑 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'
   ]
+  const cell = (value: string) => String(value).replace(/\|/g, '\\|').replace(/\n+/g, ' ')
   for (const item of visible.value) {
-    const cell = (value: string) => value.replace(/\|/g, '\\|').replace(/\n+/g, ' ')
     lines.push(
       '| ' + item.id +
       ' | ' + item.createdAtText +
@@ -204,8 +263,10 @@ function buildMarkdown() {
       ' | ' + (item.kind === 'fix' ? '勘误' : '缺口') +
       ' | ' + cell(item.want) +
       ' | ' + cell(item.scene) +
+      ' | ' + cell(item.article || '—') +
       ' | ' + cell(item.contact || '—') +
       ' | ' + (STATUS_LABEL[item.status] || item.status) +
+      ' | ' + (item.suspicious ? '是' : '') +
       ' |'
     )
   }
@@ -213,9 +274,8 @@ function buildMarkdown() {
 }
 
 async function copyMarkdown() {
-  const text = buildMarkdown()
   try {
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(buildMarkdown())
     message.value = '已复制 ' + visible.value.length + ' 条为 Markdown 表格。'
   } catch {
     message.value = '复制失败，请改用本地脚本：node scripts/feedback-report.mjs'
@@ -256,81 +316,138 @@ onMounted(() => {
 
     <template v-else>
       <div class="fb-audit__bar">
-        <strong>共 {{ summary ? summary.total : items.length }} 条</strong>
+        <strong>待看 {{ summary ? summary.total : items.length }} 条</strong>
         <span v-if="summary">
           缺口 {{ summary.byKind.gap }} · 勘误 {{ summary.byKind.fix }}
+        </span>
+        <span v-if="summary && summary.suspicious" class="fb-audit__suspect-count">
+          可疑 {{ summary.suspicious }}
         </span>
         <span class="fb-audit__spacer" />
         <button class="fb-audit__ghost" type="button" @click="load">刷新</button>
         <button class="fb-audit__ghost" type="button" @click="copyMarkdown">复制 Markdown</button>
+        <button
+          v-if="summary && summary.suspicious"
+          class="fb-audit__ghost fb-audit__ghost--danger"
+          type="button"
+          @click="removeAllSuspicious"
+        >
+          删掉全部可疑
+        </button>
         <button class="fb-audit__ghost" type="button" @click="logout">退出</button>
       </div>
 
       <p class="fb-audit__msg" role="status" aria-live="polite">{{ message }}</p>
 
-      <table v-if="summary && summary.byCategory.length" class="fb-audit__summary">
-        <thead>
-          <tr>
-            <th>分类</th>
-            <th>总数</th>
-            <th v-for="status in STATUS_ORDER" :key="status">{{ STATUS_LABEL[status] }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in summary.byCategory" :key="row.category">
-            <td>{{ row.category }}</td>
-            <td>{{ row.total }}</td>
-            <td v-for="status in STATUS_ORDER" :key="status">{{ row.byStatus[status] || 0 }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="summary && summary.byCategory.length" class="fb-audit__scroll">
+        <table class="fb-audit__summary">
+          <thead>
+            <tr>
+              <th>分类</th>
+              <th>条数</th>
+              <th v-for="status in STATUSES" :key="status.key">{{ status.label }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in summary.byCategory" :key="row.category">
+              <td>{{ row.category }}</td>
+              <td>{{ row.total }}</td>
+              <td v-for="status in STATUSES" :key="status.key">
+                {{ row.byStatus[status.key] || 0 }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="fb-audit__filters">
-        <select v-model="filterCategory">
+        <select v-model="filterCategory" aria-label="按分类筛选">
           <option value="">全部分类</option>
           <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
         </select>
-        <select v-model="filterKind">
+        <select v-model="filterKind" aria-label="按类型筛选">
           <option value="">全部类型</option>
           <option value="gap">缺口</option>
           <option value="fix">勘误</option>
         </select>
-        <select v-model="filterStatus">
+        <select v-model="filterStatus" aria-label="按状态筛选">
           <option value="">全部状态</option>
-          <option v-for="status in STATUS_ORDER" :key="status" :value="status">
-            {{ STATUS_LABEL[status] }}
+          <option v-for="status in STATUSES" :key="status.key" :value="status.key">
+            {{ status.label }}
           </option>
         </select>
-        <input v-model="keyword" type="search" placeholder="搜索内容 / 联系方式" />
+        <select v-model="filterSuspicious" aria-label="按可疑状态筛选">
+          <option value="">含可疑</option>
+          <option value="hide">只看正常</option>
+          <option value="only">只看可疑</option>
+        </select>
+        <input v-model="keyword" type="search" placeholder="搜索内容 / 联系方式" aria-label="搜索" />
       </div>
 
       <p v-if="loading" class="fb-audit__hint">读取中…</p>
-      <p v-else-if="!visible.length" class="fb-audit__hint">还没有反馈。</p>
+      <p v-else-if="!visible.length" class="fb-audit__hint">没有符合条件的反馈。</p>
 
       <ul v-else class="fb-audit__list">
-        <li v-for="item in visible" :key="item.id" class="fb-audit__item">
+        <li
+          v-for="item in visible"
+          :key="item.id"
+          class="fb-audit__item"
+          :class="'fb-audit__item--' + item.status"
+        >
           <div class="fb-audit__item-head">
             <span class="fb-audit__id">#{{ item.id }}</span>
-            <span class="fb-audit__tag">{{ item.category }}</span>
+            <select
+              class="fb-audit__category"
+              :value="item.category"
+              aria-label="分类"
+              @change="setCategory(item, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="name in categories" :key="name" :value="name">{{ name }}</option>
+            </select>
             <span class="fb-audit__tag" :class="{ 'fb-audit__tag--fix': item.kind === 'fix' }">
               {{ item.kind === 'fix' ? '勘误' : '缺口' }}
             </span>
             <span class="fb-audit__time">{{ item.createdAtText }}</span>
+            <span v-if="item.suspicious" class="fb-audit__suspect">可疑</span>
             <span class="fb-audit__spacer" />
             <select
               class="fb-audit__status"
+              :class="'fb-audit__status--' + item.status"
               :value="item.status"
+              aria-label="处理状态"
               @change="setStatus(item, ($event.target as HTMLSelectElement).value)"
             >
-              <option v-for="status in STATUS_ORDER" :key="status" :value="status">
-                {{ STATUS_LABEL[status] }}
+              <option v-for="status in STATUSES" :key="status.key" :value="status.key">
+                {{ status.label }}
               </option>
             </select>
             <button class="fb-audit__ghost" type="button" @click="remove(item)">删除</button>
           </div>
+
           <p class="fb-audit__want">{{ item.want }}</p>
           <p class="fb-audit__scene">{{ item.scene }}</p>
+          <p v-if="item.article" class="fb-audit__article">针对：{{ item.article }}</p>
           <p v-if="item.contact" class="fb-audit__contact">联系方式：{{ item.contact }}</p>
+
+          <div v-if="item.status === 'done'" class="fb-audit__resolve">
+            <input
+              v-model="item.resolvedLabel"
+              type="text"
+              maxlength="80"
+              placeholder="给读者看的短标签，比如「校园卡补办流程」"
+              aria-label="已上线标签"
+            />
+            <input
+              v-model="item.resolvedUrl"
+              type="text"
+              maxlength="300"
+              placeholder="站内地址或 https 链接，比如 /campus-card"
+              aria-label="已上线链接"
+            />
+            <button class="fb-audit__ghost" type="button" @click="saveResolution(item)">
+              保存公开链接
+            </button>
+          </div>
         </li>
       </ul>
     </template>
