@@ -159,7 +159,7 @@ test('feedback 表的列齐全（少一列就说明迁移没跟上）', () => {
   const names = rows('PRAGMA table_info(feedback)').map((c) => c.name)
   assert.deepEqual(names, [
     'id', 'category', 'kind', 'want', 'scene', 'article', 'contact',
-    'status', 'resolved_label', 'resolved_url', 'suspicious',
+    'status', 'resolved_label', 'resolved_url', 'suspicious', 'flag_reason',
     'ip_hash', 'created_at', 'updated_at', 'ticket'
   ])
 })
@@ -671,17 +671,16 @@ test('令牌是别的 action 签的：当成无效拒掉', async () => {
   }
 })
 
-test('没有令牌：照收，且**不标可疑**', async () => {
+test('没有令牌：照收，但**标成可疑**（客户端闸门之后还没有令牌，说明组件没起来）', async () => {
   const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
   assert.equal(res.status, 200, '不能因为没令牌就拒')
   assert.equal(count('feedback'), 1, '更不能丢')
-  // 客户端那边已经把闸门开在「组件可用」上了，这里还没有令牌基本只有一个原因：
-  // 这个人的网络到不了 challenges.cloudflare.com。标可疑的话，一旦整片不可达，
-  // 每条真反馈都会长得像垃圾，而「删掉全部可疑」会一次清空它们。
-  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+  const row = rows('SELECT * FROM feedback')[0]
+  assert.equal(Number(row.suspicious), 1)
+  assert.equal(row.flag_reason, 'no_token')
 })
 
-test('siteverify 连不上：照收且不标可疑，验证服务挂了不能把表单拖死', async () => {
+test('siteverify 连不上：照收、标可疑（原因是验证不可达），不把表单拖死', async () => {
   const restore = stubSiteverify(async () => {
     throw new TypeError('network error')
   })
@@ -689,13 +688,15 @@ test('siteverify 连不上：照收且不标可疑，验证服务挂了不能把
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
     assert.equal(count('feedback'), 1)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+    const row = rows('SELECT * FROM feedback')[0]
+    assert.equal(Number(row.suspicious), 1)
+    assert.equal(row.flag_reason, 'verify_down')
   } finally {
     restore()
   }
 })
 
-test('siteverify 超时（AbortError）：照收且不标可疑，也不拒', async () => {
+test('siteverify 超时（AbortError）：照收、标可疑，不拒', async () => {
   const restore = stubSiteverify(async () => {
     const error = new Error('aborted')
     error.name = 'AbortError'
@@ -704,34 +705,73 @@ test('siteverify 超时（AbortError）：照收且不标可疑，也不拒', as
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
   } finally {
     restore()
   }
 })
 
-test('siteverify 返回 internal-error：算服务不可用，照收且不标可疑', async () => {
+test('siteverify 返回 internal-error：算服务不可用，照收、标可疑', async () => {
   const restore = stubSiteverify(async () => siteverifyJson({
     success: false, 'error-codes': ['internal-error']
   }))
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200, 'internal-error 不该拒用户')
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
   } finally {
     restore()
   }
 })
 
-test('siteverify 返回 5xx：照收且不标可疑', async () => {
+test('siteverify 返回 5xx：照收、标可疑', async () => {
   const restore = stubSiteverify(async () => new Response('boom', { status: 502 }))
   try {
     const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
     assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
+    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
   } finally {
     restore()
   }
+})
+
+test('蜜罐的理由不会被「没有令牌」顶掉（trap 优先）', async () => {
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A), TURNSTILE_ENV))
+  assert.equal(rows('SELECT flag_reason FROM feedback')[0].flag_reason, 'trap')
+})
+
+test('「删掉蜜罐与过快」不碰未验证的条目', async () => {
+  // 一条蜜罐（可批删）、一条没令牌（不可批删）
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A), TURNSTILE_ENV))
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, want: '真反馈' }, IP_B), TURNSTILE_ENV))
+  assert.equal(count('feedback'), 2)
+
+  const res = await onRequestPost(
+    ctx(post('/api/feedback/delete', { allSuspicious: true }, { Cookie: cookie }))
+  )
+  assert.equal(res.status, 200)
+  assert.equal((await res.json()).deleted, 1, '只该删掉蜜罐那条')
+  const left = rows('SELECT want, flag_reason FROM feedback')
+  assert.equal(left.length, 1)
+  assert.equal(left[0].flag_reason, 'no_token')
+})
+
+test('可以把可疑标记改回正常（复核那条回路）', async () => {
+  await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
+  const id = rows('SELECT id FROM feedback')[0].id
+  assert.equal(Number(rows('SELECT suspicious FROM feedback WHERE id = ?', id)[0].suspicious), 1)
+
+  const res = await onRequestPost(
+    ctx(post('/api/feedback/update', { id, suspicious: false }, { Cookie: cookie }))
+  )
+  assert.equal(res.status, 200)
+  const row = rows('SELECT suspicious, flag_reason FROM feedback WHERE id = ?', id)[0]
+  assert.equal(Number(row.suspicious), 0)
+  assert.equal(row.flag_reason, null)
+
+  // 去掉标记之后就该计入公开统计了
+  const stats = await onRequestGet(ctx(get('/api/feedback/stats'))).then((r) => r.json())
+  assert.equal(stats.total, 1)
 })
 
 test('原生表单路径 + 令牌无效：跳 /wanted?error=verify', async () => {
@@ -777,17 +817,19 @@ test('提交接口会返回查询码，前端也必须把它带去完成页', ()
   assert.ok(form.includes('data.ticket'), '前端没从响应体里读查询码')
 })
 
-test('闸门在客户端：组件可用就先等验证走完，用不了直接放行', () => {
+test('闸门在客户端：组件可用就先等令牌，用不了就不等', () => {
   const form = readFileSync(
     resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
     'utf8'
   )
   // 只有客户端知道组件加载出来没有，服务端只能看到有没有令牌
-  assert.ok(form.includes('waitForTurnstile'), '缺少「等验证走完」的逻辑')
-  assert.ok(form.includes("'pending'"), '缺少等待状态')
-  assert.ok(form.includes("'failed'"), '缺少「组件用不了」的状态')
+  assert.ok(form.includes('waitForTurnstileToken'), '缺少「等令牌」的逻辑')
+  assert.ok(form.includes('readTurnstileToken'), '缺少「从表单读令牌」的逻辑')
+  assert.ok(form.includes('turnstileUnavailable'), '缺少「组件用不了」的标记')
   // 等不到也一定要放行，不能把人永远挡在门外
   assert.ok(form.includes('TURNSTILE_WAIT_MS'), '缺少等待上限')
+  // 判据必须是表单里那个隐藏 input —— 回调不保证触发，iframe 也不保证在哪
+  assert.ok(form.includes("'cf-turnstile-response'"), '没读那个隐藏 input')
 })
 
 test('等 API 就绪用的是轮询，不是查一次', () => {
@@ -800,10 +842,24 @@ test('等 API 就绪用的是轮询，不是查一次', () => {
   // 查一次就放弃的话，结果是「脚本请求发出去了、一个挑战请求都没有」。
   assert.ok(form.includes('waitForTurnstileApi'), '缺少「等 API 就绪」的逻辑')
   assert.ok(form.includes('TURNSTILE_API_WAIT_MS'), '缺少等 API 的上限')
-  assert.ok(
-    form.includes('typeof api.render === \'function\''),
-    '就绪判定应当看 render 是不是函数'
+})
+
+test('没有用户可见的「组件没加载出来」提示，且主路径是隐式渲染', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
   )
+  // 那个提示误报过两版（先在容器里找 iframe，后改成回调 + 时长兜底），
+  // 而且它帮不上忙：组件加载不出来时表单照样能提交，用户看不到任何异常。
+  assert.ok(!form.includes('没能加载出来'), '那个误报的提示又回来了')
+  // 显式渲染试过一次，线上一个挑战请求都没有，退回隐式渲染——能用比优雅重要。
+  // 看的是脚本地址本身，不是注释里提到过这个词。
+  assert.ok(
+    !/TURNSTILE_SCRIPT = '[^']*render=explicit/.test(form),
+    '主路径不该再用显式渲染'
+  )
+  assert.ok(form.includes('cf-turnstile'), '隐式渲染需要 .cf-turnstile 这个 class')
+  assert.ok(form.includes('data-sitekey'), '隐式渲染需要 data-sitekey')
 })
 
 test('TURNSTILE_ACTION 前后端一致', () => {
@@ -816,21 +872,6 @@ test('TURNSTILE_ACTION 前后端一致', () => {
   const fromShared = shared.match(/export const TURNSTILE_ACTION = '([^']+)'/)
   assert.ok(fromApi && fromShared, '两边都要有 TURNSTILE_ACTION')
   assert.equal(fromShared[1], fromApi[1], 'action 对不上会导致所有令牌被判无效')
-})
-
-test('不再有用户可见的「组件没加载出来」自检提示，且用显式渲染', () => {
-  const form = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  // 那个提示误报过两版：先在容器里找 iframe，后改成回调 + 时长兜底，
-  // 后者的问题回调两秒就成功了、12 秒的计时器又把它覆盖成失败。
-  // 它帮不上忙（表单照样能交），所以删掉，别再让它回来。
-  assert.ok(!form.includes('没能加载出来'), '那个误报的提示又回来了')
-  assert.ok(!form.includes('turnstileStuck'), 'turnstileStuck 应当已删除')
-  // 隐式渲染只在文档加载时扫一次 DOM，SPA 从别的页面转回来时不会重扫
-  assert.ok(form.includes('render=explicit'), '应当用显式渲染')
-  assert.ok(form.includes('turnstile.render'), '应当显式调用 render')
 })
 
 /* ------------------------------------------------------------------ 路由 */

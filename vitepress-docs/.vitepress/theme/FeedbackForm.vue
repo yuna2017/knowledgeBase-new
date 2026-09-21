@@ -16,7 +16,7 @@
  * 3. 蜜罐字段对用户隐藏，脚本会填。服务端只把它标成「可疑」，**不丢**——
  *    浏览器自动填充有可能命中，真用户不该因此白填。
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { TURNSTILE_ACTION, TURNSTILE_SITE_KEY } from '../shared/turnstile'
 
 const CATEGORIES = [
@@ -42,11 +42,6 @@ const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
 
 const formEl = ref<HTMLFormElement | null>(null)
 const turnstileEl = ref<HTMLElement | null>(null)
-/**
- * 验证组件的状态，决定「提交要不要等验证走完」（见下面 mountTurnstile 的说明）。
- * 没配 site key 时是 off，永远不会拦人。
- */
-const turnstileState = ref<TurnstileState>(TURNSTILE_SITE_KEY ? 'pending' : 'off')
 
 const category = ref('')
 const kind = ref('gap')
@@ -244,10 +239,7 @@ async function send(payload: Record<string, unknown>) {
  */
 async function submitWithVerification() {
   if (sending.value) return
-  if (turnstileState.value === 'pending') {
-    message.value = '正在完成人机验证…'
-    await waitForTurnstile()
-  }
+  await waitForTurnstileToken()
   await send(collect())
 }
 
@@ -345,57 +337,47 @@ async function flushPending() {
 /* ------------------------------------------------------------ 机器人验证 */
 
 /**
- * 加载 Turnstile。没配 site key 就什么都不做——页面不引入任何第三方脚本。
+ * Turnstile 人机验证。
  *
- * 用**显式渲染**（`?render=explicit` + `turnstile.render()`），不是隐式渲染。
- * 原因是这个站是 SPA：隐式渲染只在脚本文档加载时扫一遍 DOM，用户从别的页面
- * 转回 `/wanted` 时不会重新扫，那个新出现的 `.cf-turnstile` 就永远是空的、
- * 拿不到令牌，于是提交全被标成可疑。显式渲染在每次挂载时自己调一次，两种
- * 情况都对。
+ * **用隐式渲染**：脚本加载后自己扫 `.cf-turnstile`，把令牌写进表单里一个隐藏
+ * input。曾经为了「SPA 转回来时隐式渲染不会重扫 DOM」改成 `?render=explicit`，
+ * 结果线上一个挑战请求都没有（`script` 的 load 事件不代表 API 就绪），退回来了。
+ * **能用比优雅重要。**
  *
- * ⚠️ **这里刻意不做「加载成功了吗」的自检。** 做过两版，两版都误报：
+ * 那条 SPA 顾虑换个办法解决：挂载时如果 Turnstile API **已经存在**，说明脚本
+ * 上一轮就加载过了、这次是转回来重新挂载，就补一次显式渲染；首次进入完全不碰，
+ * 交给隐式渲染。两条路互斥，不会渲染两遍。
  *
- *   1. 8 秒后在自己那个 div 里找 iframe —— iframe 渲染到哪儿由 Turnstile 决定，
- *      不保证是它的后代；
- *   2. 改成官方 `data-callback` + 在整个文档里找 iframe —— 仍然误报，因为回调
- *      两秒就成功返回了，**12 秒后的兜底计时器又无条件把它覆盖成失败**。
- *
- * 而这个提示本身几乎没有价值：组件加载不出来时表单照样能提交，服务端只会把这条
- * 标成可疑，用户在页面上看不到任何异常。一个只会误报、又帮不上忙的提示，
- * 删掉比修第三版好。失败信号改为只写 console，给排查的人看。
- *
- * 结果进不了前端的，服务端兜着：拿不到令牌只会标可疑，不会拒。
+ * 判断「验证过了没有」**只看表单里有没有令牌**——那是 Turnstile 自己写进去的，
+ * 唯一可信的凭据。不依赖回调（`data-callback` 传全局函数名在隐式渲染下不保证
+ * 触发），也不依赖 iframe 渲染到哪儿（它的 iframe 不一定是我们的后代）。
  */
-const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
 
 interface TurnstileApi {
-  render: (el: HTMLElement, options: Record<string, unknown>) => string
-  remove?: (id: string) => void
-  reset?: (id: string) => void
-  ready?: (cb: () => void) => void
+  render?: (el: HTMLElement, options: Record<string, unknown>) => string
+  reset?: () => void
 }
-
-/**
- * 验证组件的状态，它决定「提交要不要等验证走完」：
- *
- *   off     没配 site key —— 全站不管验证
- *   pending 已经渲染，等令牌
- *   ready   拿到令牌了
- *   failed  脚本/渲染没成，或者等超时了
- *
- * **闸门开在客户端**，因为只有客户端知道组件到底加载出来了没有。
- * 服务端没法分辨「组件没加载」和「机器人压根没发请求」——它只能看到有没有令牌。
- */
-type TurnstileState = 'off' | 'pending' | 'ready' | 'failed'
 
 /** 等令牌的上限。等到头就放行——卡住的组件不该把人永远挡在门外 */
 const TURNSTILE_WAIT_MS = 10000
-/** 等 API 就绪的上限（见 waitForTurnstileApi） */
-const TURNSTILE_API_WAIT_MS = 8000
+/** 等 API 就绪的上限 */
+const TURNSTILE_API_WAIT_MS = 5000
 
-/** 脚本只加载一次；存 promise 是为了并发调用不会插两个 script */
+/** 组件明显没起来（脚本被挡 / API 没就绪 / 渲染失败）——这时不等令牌，直接放行 */
+const turnstileUnavailable = ref(false)
+
+function turnstileApi(): TurnstileApi | null {
+  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
+  return api && typeof api.render === 'function' ? api : null
+}
+
+function turnstileContainer(): HTMLElement | null {
+  return turnstileEl.value ?? document.querySelector<HTMLElement>('.feedback-form__verify')
+}
+
+/** 脚本只加载一次 */
 let scriptPromise: Promise<boolean> | null = null
-let widgetId: string | null = null
 
 function loadTurnstileScript(): Promise<boolean> {
   if (scriptPromise) return scriptPromise
@@ -406,9 +388,7 @@ function loadTurnstileScript(): Promise<boolean> {
     script.defer = true
     script.addEventListener('load', () => resolve(true))
     script.addEventListener('error', () => {
-      console.warn(
-        '[turnstile] 脚本加载失败（可能被网络挡了）。按设计直接放行，不拦提交。'
-      )
+      console.warn('[turnstile] 脚本加载失败（可能被网络挡了）。按设计直接放行。')
       resolve(false)
     })
     document.head.appendChild(script)
@@ -417,21 +397,16 @@ function loadTurnstileScript(): Promise<boolean> {
 }
 
 /**
- * 等 api.js 里那个真正的 API 就绪。
- *
- * ⚠️ **`script` 的 load 事件不代表 API 可用**，这是踩过的坑：
- * `/turnstile/v0/api.js` 只是个 302 引导，真正的 86 KB 包是它之后自己再拉的
- * （HAR 里这两条是分开的）。第一版在 load 之后只查一次 `window.turnstile.render`，
- * 那会儿它还没就绪 → 直接放弃 → **脚本请求发出去了，但一个挑战请求都没有**。
- *
- * 所以这里轮询等，而不是查一次就走。等不到也不算崩——按设计直接放行。
+ * ⚠️ **`script` 的 load 事件不代表 API 可用**：`/turnstile/v0/api.js` 只是个 302
+ * 引导，真正的 86 KB 包是它之后自己再拉的（HAR 里这两条是分开的）。
+ * 所以这里轮询等，而不是查一次就走。
  */
 function waitForTurnstileApi(timeoutMs: number): Promise<TurnstileApi | null> {
   return new Promise((resolve) => {
     const deadline = Date.now() + timeoutMs
     const tick = () => {
-      const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
-      if (api && typeof api.render === 'function') {
+      const api = turnstileApi()
+      if (api) {
         resolve(api)
         return
       }
@@ -445,143 +420,98 @@ function waitForTurnstileApi(timeoutMs: number): Promise<TurnstileApi | null> {
   })
 }
 
-async function mountTurnstile() {
-  if (!TURNSTILE_SITE_KEY) return
-  // ref 万一没绑上（v-if + 预渲染的组合）就退回按 class 找，别整块静默失效
-  const container =
-    turnstileEl.value ??
-    document.querySelector<HTMLElement>('.feedback-form__verify')
-  if (!container) {
-    turnstileState.value = 'failed'
-    console.warn('[turnstile] 找不到挂载点，按设计直接放行。')
-    return
-  }
-  if (!(await loadTurnstileScript())) {
-    turnstileState.value = 'failed'
-    return
-  }
-
+/** 只在「转回来重新挂载」那条路上调用：隐式渲染不会重扫新元素，补一次 */
+async function renderTurnstile() {
+  const container = turnstileContainer()
+  if (!container || container.childElementCount > 0) return
   const api = await waitForTurnstileApi(TURNSTILE_API_WAIT_MS)
-  if (!api) {
-    turnstileState.value = 'failed'
-    console.warn('[turnstile] 等了 8 秒 API 都没就绪，按设计直接放行。')
+  if (!api || typeof api.render !== 'function') {
+    turnstileUnavailable.value = true
+    return
+  }
+  // 等的过程中隐式渲染可能已经处理了
+  if (container.childElementCount > 0) return
+  try {
+    api.render(container, {
+      sitekey: TURNSTILE_SITE_KEY,
+      action: TURNSTILE_ACTION,
+      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+      size: 'flexible',
+      appearance: 'interaction-only'
+    })
+  } catch (error) {
+    turnstileUnavailable.value = true
+    console.warn('[turnstile] 渲染失败：' + String(error) + '，按设计直接放行。')
+  }
+}
+
+async function initTurnstile() {
+  if (!TURNSTILE_SITE_KEY) return
+  const container = turnstileContainer()
+  // 站点自己的深浅色是手动切 class，不是系统偏好，显式告诉它用哪套
+  if (container) {
+    container.setAttribute(
+      'data-theme',
+      document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+    )
+  }
+
+  if (turnstileApi()) {
+    // 脚本上一轮就加载过了，这次是 SPA 转回来——隐式渲染不会重扫这个新元素
+    await renderTurnstile()
     return
   }
 
-  let started = false
-  const start = () => {
-    if (started) return
-    started = true
-    // 重新挂载（SPA 转回来）时先把上一个清掉，否则容器里会叠两个
-    if (widgetId !== null && typeof api.remove === 'function') {
-      try {
-        api.remove(widgetId)
-      } catch {
-        // 清不掉就算了，下面直接覆盖
-      }
-      widgetId = null
-    }
-    try {
-      widgetId = api.render(container, {
-        sitekey: TURNSTILE_SITE_KEY,
-        action: TURNSTILE_ACTION,
-        // 站点自己的深浅色是手动切 class，不是系统偏好，所以显式指定
-        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-        size: 'flexible',
-        // 正常读者看不到它，只有 Turnstile 判定需要交互时才出现
-        appearance: 'interaction-only',
-        callback: () => {
-          // 令牌到手，隐藏 input 也已经被塞进表单了
-          turnstileState.value = 'ready'
-        },
-        'error-callback': (code: string) => {
-          turnstileState.value = 'failed'
-          console.warn('[turnstile] 挑战失败：' + code + '，按设计直接放行。')
-        },
-        // 令牌过期会自动换新的，退回去接着等；等不到就按超时放行
-        'expired-callback': () => {
-          turnstileState.value = 'pending'
-        },
-        'timeout-callback': () => {
-          turnstileState.value = 'pending'
-        }
-      })
-    } catch (error) {
-      turnstileState.value = 'failed'
-      console.warn('[turnstile] 渲染失败：' + String(error) + '，按设计直接放行。')
-    }
+  // 首次进入：完全交给隐式渲染，不插手（插手会跟它抢着渲染，出两个组件）
+  if (!(await loadTurnstileScript())) {
+    turnstileUnavailable.value = true
+    return
   }
+  // 脚本回来了，但 API 可能还要等一会儿；等不到就认为组件没起来
+  if (!(await waitForTurnstileApi(TURNSTILE_API_WAIT_MS))) {
+    turnstileUnavailable.value = true
+    console.warn('[turnstile] API 一直没就绪，按设计直接放行。')
+  }
+}
 
-  /*
-   * API 已经确认就绪（render 是个函数），所以这里其实可以直接 start()。
-   * 仍然先走一次官方 ready() 是保守做法，并且**加了兜底计时器**：
-   * ready() 万一不回调（它等的是「完全加载」，我们等的只是 render 可用），
-   * 2 秒后自己来一次。start() 内部有 started 守卫，不会渲染两遍。
-   */
-  if (typeof api.ready === 'function') {
-    api.ready(start)
-    window.setTimeout(start, 2000)
-  } else {
-    start()
-  }
+/** 表单里有没有令牌。这是唯一可信的「验证过了没有」 */
+function readTurnstileToken(): string {
+  const form = formEl.value
+  if (!form) return ''
+  return String(new FormData(form).get('cf-turnstile-response') || '')
 }
 
 /**
- * 等验证走完。
+ * 等验证走完（组件可用时）。
  *
- * 正常情况一两秒就 ready；**等不到也一定会放行**——一个卡住的验证组件
- * 把用户永远挡在门外，比放进一条可疑提交糟得多。等超时就当它 failed。
+ * 拿不到令牌也**一定会放行**——等满 10 秒就当组件用不了。一个卡住的验证组件把
+ * 用户永远挡在门外，比放进一条没令牌的提交糟得多：那条会被标成可疑，由人复核。
  */
-function waitForTurnstile(): Promise<void> {
-  if (turnstileState.value !== 'pending') return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    const deadline = Date.now() + TURNSTILE_WAIT_MS
-    const tick = () => {
-      if (turnstileState.value !== 'pending') {
-        resolve()
-        return
-      }
-      if (Date.now() >= deadline) {
-        turnstileState.value = 'failed'
-        console.warn('[turnstile] 等令牌超时，按设计直接放行。')
-        resolve()
-        return
-      }
-      window.setTimeout(tick, 250)
-    }
-    tick()
-  })
+async function waitForTurnstileToken(): Promise<void> {
+  if (!TURNSTILE_SITE_KEY || turnstileUnavailable.value) return
+  if (readTurnstileToken()) return
+  message.value = '正在完成人机验证…'
+  const deadline = Date.now() + TURNSTILE_WAIT_MS
+  while (Date.now() < deadline) {
+    await sleep(250)
+    if (readTurnstileToken()) return
+  }
+  console.warn('[turnstile] 等令牌超时，按设计直接放行（这条会被标成可疑）。')
 }
 
-/** 服务端说令牌无效时，换一个再来（过期的令牌不能重复用） */
+/** 服务端说令牌无效时换一个再来（过期令牌不能重复用） */
 function resetTurnstile() {
-  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
-  if (widgetId !== null && api && typeof api.reset === 'function') {
-    try {
-      api.reset(widgetId)
-      turnstileState.value = 'pending'
-    } catch {
-      // 忽略：下次提交会带旧令牌，服务端再拒一次而已
-    }
+  try {
+    turnstileApi()?.reset?.()
+  } catch {
+    // 忽略：下次提交会带旧令牌，服务端再拒一次而已
   }
 }
-
-onBeforeUnmount(() => {
-  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
-  if (widgetId !== null && api && typeof api.remove === 'function') {
-    try {
-      api.remove(widgetId)
-    } catch {
-      // 忽略
-    }
-    widgetId = null
-  }
-})
 
 onMounted(() => {
   startedAt = Date.now()
   restoreDraft()
-  void mountTurnstile()
+  void initTurnstile()
   void flushPending()
 })
 </script>
@@ -695,11 +625,22 @@ onMounted(() => {
     </div>
 
     <!--
-      机器人验证的挂载点。site key 为空时整块不渲染，也就不加载任何第三方脚本。
-      用显式渲染，所以这里**不能带 .cf-turnstile class**（那是隐式渲染的标记），
-      参数由 mountTurnstile() 传给 turnstile.render()。
+      机器人验证的挂载点。
+      带 `.cf-turnstile` + `data-sitekey` 是**隐式渲染**的标记——脚本加载后自己会扫。
+      SPA 从别的页面转回来时那个新元素不会被重扫，所以 initTurnstile() 在
+      「API 已经存在」的情况下会补一次显式渲染（见那边的说明）。
+      site key 为空时整块不渲染，也就不加载任何第三方脚本。
     -->
-    <div v-if="TURNSTILE_SITE_KEY" ref="turnstileEl" class="feedback-form__verify" />
+    <div
+      v-if="TURNSTILE_SITE_KEY"
+      ref="turnstileEl"
+      class="cf-turnstile feedback-form__verify"
+      :data-sitekey="TURNSTILE_SITE_KEY"
+      :data-action="TURNSTILE_ACTION"
+      data-size="flexible"
+      data-appearance="interaction-only"
+      data-theme="auto"
+    />
 
     <div class="feedback-form__actions">
       <button class="feedback-form__submit" type="submit" :disabled="sending">

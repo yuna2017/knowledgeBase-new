@@ -28,8 +28,23 @@ interface FeedbackItem {
   resolvedLabel: string
   resolvedUrl: string
   suspicious: boolean
+  flagReason: string
   createdAt: number
   createdAtText: string
+}
+
+/**
+ * 可疑的原因。**它们不是一回事**，所以要分开显示：
+ *   trap / fast             几乎可以确定是脚本，是「删掉蜜罐与过快」批量清的对象
+ *   no_token / verify_down  大概率是这个人的网络到不了 Cloudflare，里面混着真反馈
+ *   manual                  维护者自己标的
+ */
+const FLAG_LABEL: Record<string, string> = {
+  trap: '可疑·蜜罐',
+  fast: '可疑·过快',
+  no_token: '可疑·未验证',
+  verify_down: '可疑·验证不可达',
+  manual: '可疑·手动'
 }
 
 interface Summary {
@@ -232,13 +247,27 @@ async function removeAllSuspicious() {
     message.value = '没有可疑条目。'
     return
   }
-  if (!window.confirm('一次删掉全部 ' + count + ' 条可疑反馈？删掉之后无法恢复。')) return
+  if (
+    !window.confirm(
+      '只删「蜜罐」和「填得太快」那两类，共 ' + count + ' 条可疑里的这部分。\n' +
+      '「未验证 / 验证不可达」的不会被删——它们可能只是网络到不了 Cloudflare 的真反馈。\n\n继续？'
+    )
+  ) {
+    return
+  }
   const { ok, data } = await request('/api/feedback/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ allSuspicious: true })
   })
-  message.value = ok ? '已删除 ' + (data?.deleted ?? count) + ' 条。' : '删除失败。'
+  message.value = ok ? '已删除 ' + (data?.deleted ?? 0) + ' 条。' : '删除失败。'
+  await load()
+}
+
+/** 复核后认为是真反馈：把可疑标记去掉，它就会计入公开统计 */
+async function markClean(item: FeedbackItem) {
+  if (!(await patch(item, { suspicious: false }))) return
+  message.value = '已标记为正常，现在会计入公开统计。'
   await load()
 }
 
@@ -324,9 +353,10 @@ onMounted(() => {
           v-if="summary && summary.suspicious"
           class="fb-audit__ghost fb-audit__ghost--danger"
           type="button"
+          title="只删「蜜罐」和「填得太快」两类；未验证的不动"
           @click="removeAllSuspicious"
         >
-          删掉全部可疑
+          删掉蜜罐与过快
         </button>
         <button class="fb-audit__ghost" type="button" @click="logout">退出</button>
       </div>
@@ -397,8 +427,19 @@ onMounted(() => {
             </span>
             <span class="fb-audit__time">{{ item.createdAtText }}</span>
             <span v-if="item.ticket" class="fb-audit__ticket">{{ item.ticket }}</span>
-            <span v-if="item.suspicious" class="fb-audit__suspect">可疑</span>
+            <span v-if="item.suspicious" class="fb-audit__suspect">
+              {{ FLAG_LABEL[item.flagReason] || '可疑' }}
+            </span>
             <span class="fb-audit__spacer" />
+            <button
+              v-if="item.suspicious"
+              class="fb-audit__ghost"
+              type="button"
+              title="确认是真实反馈：去掉可疑标记，它就会计入公开统计"
+              @click="markClean(item)"
+            >
+              标记为正常
+            </button>
             <select
               class="fb-audit__status"
               :class="'fb-audit__status--' + item.status"

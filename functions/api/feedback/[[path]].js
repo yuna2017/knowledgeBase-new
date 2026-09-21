@@ -300,6 +300,7 @@ function schemaStatements(db) {
          resolved_label TEXT,
          resolved_url   TEXT,
          suspicious     INTEGER NOT NULL DEFAULT 0,
+         flag_reason    TEXT,
          ip_hash        TEXT,
          created_at     INTEGER NOT NULL,
          updated_at     INTEGER,
@@ -470,15 +471,30 @@ async function handleSubmit(context) {
    *   - 填得太快：粘贴一段准备好的文字，三秒交上去很正常
    * 标记之后由维护者在审计页判断，并有一键「删掉全部可疑」。
    */
+  /*
+   * 四条「可疑」的理由。注意它们**不是一回事**：
+   *
+   *   trap        蜜罐被填              ┐ 几乎可以确定是脚本，一键批量删的就是这两类
+   *   fast        填得太快              ┘
+   *   no_token    请求里没有令牌        ┐ 大概率是这个人的网络到不了 Cloudflare，
+   *   verify_down siteverify 不可达     ┘ 里面混着真反馈，**不能跟着一起批量删**
+   *
+   * 区分开是为了让「删掉全部可疑」不至于在 Cloudflare 整片不可达时清空真数据。
+   * 维护者看到带理由的标记，可以逐条判断。
+   */
   let suspicious = 0
+  let flagReason = ''
+
   const trap = clean(fields.fb_trap, 100)
   if (trap) {
     suspicious = 1
+    flagReason = 'trap'
     console.warn('[feedback] 蜜罐字段被填，标记为可疑但不丢弃')
   }
   const elapsed = Number(fields.elapsed)
   if (Number.isFinite(elapsed) && elapsed > 0 && elapsed < MIN_FILL_MS) {
     suspicious = 1
+    if (!flagReason) flagReason = 'fast'
     console.warn('[feedback] 提交耗时 ' + elapsed + 'ms，标记为可疑但不丢弃')
   }
 
@@ -490,9 +506,10 @@ async function handleSubmit(context) {
     return fail(400, 'turnstile rejected the token', '/wanted?error=verify')
   }
   if (verdict.state === 'missing' || verdict.state === 'unreachable') {
-    // 只记账不拦人：走到这里基本就是「这个人的网络到不了 Cloudflare」，
-    // 标成可疑会让整批真反馈在审计页里长得像垃圾（见 verifyTurnstile 的说明）
-    console.warn('[feedback] Turnstile ' + verdict.state + '（' + verdict.detail + '），照收')
+    // 照收，但标出来让维护者看一眼——**不拒人**，也**不当成没发生**
+    suspicious = 1
+    if (!flagReason) flagReason = verdict.state === 'missing' ? 'no_token' : 'verify_down'
+    console.warn('[feedback] Turnstile ' + verdict.state + '（' + verdict.detail + '），照收并标记')
   }
 
   const category = clean(fields.category, 32)
@@ -537,12 +554,12 @@ async function handleSubmit(context) {
     await env.DB.prepare(
       `INSERT INTO feedback
          (ticket, category, kind, want, scene, article, contact, status,
-          suspicious, ip_hash, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`
+          suspicious, flag_reason, ip_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)`
     )
       .bind(
         ticket, category, kind, want, scene, article || null, contact || null,
-        suspicious, hash, now, now
+        suspicious, flagReason || null, hash, now, now
       )
       .run()
 
@@ -740,7 +757,7 @@ async function handleList(request, env) {
   await ensureSchema(env)
   const { results } = await env.DB.prepare(
     `SELECT id, ticket, category, kind, want, scene, article, contact, status,
-            resolved_label, resolved_url, suspicious, created_at, updated_at
+            resolved_label, resolved_url, suspicious, flag_reason, created_at, updated_at
        FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT ?`
   )
     .bind(LIST_MAX)
@@ -759,6 +776,7 @@ async function handleList(request, env) {
     resolvedLabel: row.resolved_label || '',
     resolvedUrl: row.resolved_url || '',
     suspicious: Number(row.suspicious) === 1,
+    flagReason: row.flag_reason || '',
     createdAt: Number(row.created_at),
     createdAtText: utc8Stamp(Number(row.created_at)),
     day: utc8Day(new Date(Number(row.created_at)))
@@ -828,6 +846,16 @@ async function handleUpdate(context) {
     sets.push('resolved_url = ?')
     values.push(url || null)
   }
+  /*
+   * 标记为正常 / 可疑。
+   * 「标记为正常」是复核那条回路的关键：被标可疑的条目**不进公开统计**，
+   * 如果只能删不能改回来，那 Cloudflare 一不可达就得把整批真反馈删掉。
+   */
+  if (body.suspicious === false) {
+    sets.push('suspicious = 0', 'flag_reason = NULL')
+  } else if (body.suspicious === true) {
+    sets.push("suspicious = 1", "flag_reason = 'manual'")
+  }
 
   /*
    * 刻意**不支持改分类**。
@@ -866,9 +894,18 @@ async function handleDelete(context) {
 
   await ensureSchema(env)
 
-  // 一次性清掉全部可疑条目：蜜罐和耗时误判的代价由此兜住
+  /*
+   * 一次性清掉「几乎可以确定是脚本」的那些。
+   *
+   * **刻意只删 trap / fast**，不含 no_token / verify_down：后两者的成因很可能是
+   * 「这个人的网络到不了 Cloudflare」，里面混着真实反馈。要是在整片不可达的时候
+   * 让这个按钮把它们一次清空，那就是拿一个误报删掉了所有人的稿子。
+   * 那两类留在列表里逐条判断，或者点「标记为正常」让它们计入统计。
+   */
   if (body && body.allSuspicious === true) {
-    const result = await env.DB.prepare('DELETE FROM feedback WHERE suspicious = 1').run()
+    const result = await env.DB.prepare(
+      "DELETE FROM feedback WHERE suspicious = 1 AND flag_reason IN ('trap', 'fast')"
+    ).run()
     return json({ ok: true, deleted: Number(result.meta?.changes ?? 0) }, 200)
   }
 
