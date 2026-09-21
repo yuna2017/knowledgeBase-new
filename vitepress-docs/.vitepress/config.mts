@@ -313,6 +313,9 @@ export default defineConfig({
       {
         text: '校园服务',
         items: [
+          // 下拉的第一项是总览页：校园侧的入口原先没有汇总页，
+          // 只能靠「校园网」这一项顶替，读者点进来直接落到校园网简介上
+          { text: '服务总览', link: '/campus-index' },
           { text: '校园网', link: '/campus-network-index' },
           { text: '一网通办', link: '/campus-service-index' },
           { text: '校园正版化', link: '/campus-ms-index' },
@@ -336,22 +339,26 @@ export default defineConfig({
       // 标签与最近更新只放在顶部 nav，不进 sidebar：
       // sidebar 的顺序同时决定「上一篇/下一篇」的串联，聚合页混在里面会让
       // 文章的上一篇指到「最近更新」这种非文章页去
-      {
-        text: '校园网',
-        items: [
-          { text: '校园网简介', link: '/campus-network-index' },
-          { text: '连接与认证', link: '/campus-network-connect' },
-          { text: '常见问题', link: '/campus-network-qa' },
-          { text: '学校 WebVPN', link: '/campus-network-vpn' }
-        ]
-      },
+
+      // 校园侧合成一个大组：顺序和 campus-index.md 里的分组保持一致
+      // （网 → 一网通办 → 正版化/邮箱 → 组织与生活），总览页排在最前，
+      // 所以「下一篇」的起点就是整块校园内容的入口
       {
         text: '校园服务',
         items: [
+          { text: '服务总览', link: '/campus-index' },
+          { text: '校园网简介', link: '/campus-network-index' },
+          { text: '连接与认证', link: '/campus-network-connect' },
+          { text: '常见问题', link: '/campus-network-qa' },
+          { text: '学校 WebVPN', link: '/campus-network-vpn' },
           { text: '一网通办', link: '/campus-service-index' },
           { text: '校园正版化', link: '/campus-ms-index' },
           { text: '校园邮箱', link: '/campus-mail-index' },
-          { text: '常用部门与公众号', link: '/campus-departments-wechat' }
+          { text: '常用部门与公众号', link: '/campus-departments-wechat' },
+          // 这两篇原先只在标签页和搜索里够得着，没有任何编辑入口，
+          // 读者没有理由点进去。接进 sidebar 后才能被正常撞见。
+          { text: '学生社团与组织', link: '/campus-clubs' },
+          { text: '在校点外卖指南', link: '/guidance-takeout' }
         ]
       },
       {
