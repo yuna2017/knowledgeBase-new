@@ -16,10 +16,12 @@ const DISPLAY_COUNT = 3
 const api = import.meta.env.VITE_VIEWS_API
 const items = ref<TopItem[]>([])
 
-// 路径 → 标题映射，把 D1 里存的站内路径还原成可读标题
-const titleMap = computed(() => {
-  const map = new Map<string, string>()
-  for (const p of pages) map.set(p.url, p.title)
+// 路径 → 标题与摘要，把 D1 里存的站内路径还原成可读内容。
+// 摘要取自 frontmatter.description，和「置顶推荐」用的是同一个字段，
+// 首页两处推荐区展示的字段因此保持一致。
+const metaMap = computed(() => {
+  const map = new Map<string, (typeof pages)[number]>()
+  for (const p of pages) map.set(p.url, p)
   return map
 })
 
@@ -33,11 +35,15 @@ const ranked = computed(() =>
     // 混进排行会把首页最显眼的位置让给入口页和维护文档
     .filter((item) => isRankableArticle(item.page) && !pinnedUrls.value.has(item.page))
     .slice(0, DISPLAY_COUNT)
-    .map((item) => ({
-      url: item.page,
-      views: item.views,
-      title: titleMap.value.get(item.page) || item.page
-    }))
+    .map((item) => {
+      const meta = metaMap.value.get(item.page)
+      return {
+        url: item.page,
+        views: item.views,
+        title: meta?.title || item.page,
+        description: meta?.description || ''
+      }
+    })
 )
 
 onMounted(async () => {
@@ -57,10 +63,17 @@ onMounted(async () => {
 <template>
   <div v-if="ranked.length" class="top-views">
     <h2 class="top-views__title">最高阅读</h2>
+    <!-- 用 ol 保留"这是个排行"的语义，视觉上按卡片网格排 -->
     <ol class="top-views__list">
-      <li v-for="item in ranked" :key="item.url">
-        <a :href="withBase(item.url)">{{ item.title }}</a>
-        <span class="top-views__count">{{ item.views.toLocaleString('zh-CN') }}</span>
+      <li v-for="(item, index) in ranked" :key="item.url">
+        <a class="top-views__card" :href="withBase(item.url)">
+          <span class="top-views__head">
+            <span class="top-views__rank">{{ index + 1 }}</span>
+            <span class="top-views__name">{{ item.title }}</span>
+            <span class="top-views__count">{{ item.views.toLocaleString('zh-CN') }}</span>
+          </span>
+          <span v-if="item.description" class="top-views__desc">{{ item.description }}</span>
+        </a>
       </li>
     </ol>
   </div>

@@ -22,16 +22,20 @@ hero:
       text: 校园网指南
       link: /campus-network-index
 
-features:
+# 这一行卡片不再用默认主题的 features 键：features 会被 VPHomeFeatures
+# 整行接管渲染（没有插槽可以只换其中一张），而第三个格子要放交互式的
+# 「随便看看」。换成自定义键后，前两张卡片仍然在 frontmatter 里编辑，
+# 由 theme/HomeCards.vue 渲染。标签入口没有消失——导航「标签」、hero 的
+# 「按标签浏览」和下面《使用说明》里都还指向 /tags。
+homeCards:
   - title: 校园服务
-    details: 校园网、一网通办、正版化、校园邮箱与 WebVPN 使用指南。
-    link: /campus-network-index
+    details: 校园网连接与认证、一网通办办事入口、正版软件下载、校园邮箱与 WebVPN 校外访问，以及学生社团与组织、常用部门公众号、在校点外卖等日常信息。
+    link: /campus-index
+    linkText: 查看
   - title: 技术资源
-    details: 学生权益、免费资源、科研工具、AI 编程与自托管入门。
+    details: 学生权益与教育优惠、免费额度与开源替代软件、文献管理与科研工具、MOOC 自学路线，以及 AI 编程、Vibe Coding、域名与 Cloudflare、自托管等技术实践。
     link: /tech-index
-  - title: 标签索引
-    details: 按校园服务、学生权益、技术工具等主题浏览文档。
-    link: /tags
+    linkText: 查看
 ---
 
 ## 使用说明
@@ -39,6 +43,7 @@ features:
 校园政策、软件版本、免费额度和第三方服务条款都可能变化。使用文档中的步骤前，请同时核对学校或服务商的最新官方页面。
 
 - 不知道从哪里开始时，打开[标签索引](/tags)按主题浏览。
+- 校园网、一网通办、正版化、校园邮箱和生活服务都在[校园服务导航](/campus-index)里；技术类内容看[技术资源导航](/tech-index)。
 - 想知道最近改了什么，看[最近更新](/recent)。
 - 站内搜索可查找标题、正文和关键词。
 - 了解项目维护方式时，可查看[仓库说明](/README)。

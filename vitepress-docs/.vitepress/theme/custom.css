@@ -432,54 +432,82 @@
   padding: 0;
 }
 
+/*
+ * 卡片网格，尺寸与观感对齐「置顶推荐」的 .pinned-articles__list/__card，
+ * 首页这两段推荐区因此长得一样，只是这里多了名次与阅读数。
+ */
 .top-views__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
   margin: 0;
   padding: 0;
   list-style: none;
-  counter-reset: top-views;
 }
 
-.top-views__list li {
+.top-views__card {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 10px 14px;
-  margin: 0 0 8px;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 18px;
   border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--vp-c-bg-soft);
-  counter-increment: top-views;
+  text-decoration: none !important;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
 }
 
-.top-views__list li::before {
-  content: counter(top-views);
+.top-views__card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  transform: translateY(-1px);
+}
+
+.top-views__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 名次用实心圆标出，和标题同一行——排行是这个区块唯一的额外信息 */
+.top-views__rank {
   flex: none;
-  width: 22px;
-  height: 22px;
-  line-height: 22px;
-  text-align: center;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--vp-c-brand-1);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
+  line-height: 20px;
+  text-align: center;
 }
 
-.top-views__list a {
+.top-views__name {
   flex: 1;
-  font-weight: 500;
-  text-decoration: none;
+  min-width: 0;
   color: var(--vp-c-text-1);
+  font-weight: 600;
+  line-height: 1.5;
 }
 
-.top-views__list a:hover {
+.top-views__card:hover .top-views__name {
   color: var(--vp-c-brand-1);
 }
 
 .top-views__count {
   flex: none;
   color: var(--vp-c-text-3);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+/* 摘要与「置顶推荐」卡片同源同义，字号行高保持一致，卡片高度才对得上 */
+.top-views__desc {
+  flex: 1;
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 /* ---- 首页置顶推荐 ---- */
@@ -615,4 +643,272 @@
 .recruit-banner__close:hover {
   color: var(--vp-c-text-1);
   background: var(--vp-c-default-soft);
+}
+
+/* ---- 首页卡片行（替代默认主题的 features 行） ---- */
+
+/*
+ * 尺寸与断点照搬默认主题的 VPFeatures / VPFeature：index.md 改用自定义键
+ * homeCards 后，这一行改由 HomeCards.vue 渲染，静态卡片必须和替换前长得一样，
+ * 所以下面这几条是从默认主题抄过来的（含 768px 起的三列断点）。
+ */
+.home-cards {
+  position: relative;
+  padding: 0 24px;
+}
+
+@media (min-width: 640px) {
+  .home-cards {
+    padding: 0 48px;
+  }
+}
+
+@media (min-width: 960px) {
+  .home-cards {
+    padding: 0 64px;
+  }
+}
+
+.home-cards__container {
+  margin: 0 auto;
+  max-width: 1152px;
+}
+
+.home-cards__items {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -8px;
+}
+
+.home-cards__item {
+  padding: 8px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .home-cards__item {
+    width: calc(100% / 3);
+  }
+}
+
+.home-card {
+  display: block;
+  height: 100%;
+  border: 1px solid var(--vp-c-bg-soft);
+  border-radius: 12px;
+  background-color: var(--vp-c-bg-soft);
+  transition: border-color 0.25s, background-color 0.25s;
+}
+
+a.home-card {
+  text-decoration: none;
+}
+
+a.home-card:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.home-card__box {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px;
+}
+
+.home-card__title {
+  margin: 0;
+  line-height: 24px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.home-card__details {
+  /*
+   * 这一行卡片是等高的（.home-card 的 height: 100%），而「随便看看」那张
+   * 天生比这两张高。details 用 flex-grow 吃掉多出来的高度之后，再让文字
+   * 在这块空间里居中，多余的部分就均分到上下两侧，而不是全堆在卡片底部
+   * 显得空。
+   */
+  display: flex;
+  flex-grow: 1;
+  align-items: center;
+  margin: 0;
+  padding-top: 8px;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.home-card__link {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding-top: 8px;
+  color: var(--vp-c-brand-1);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.home-card__link-icon {
+  margin-left: 6px;
+}
+
+/* ---- 卡片行第三格：随便看看 ---- */
+
+/*
+ * 牌面区撑满剩余高度，footer 才会贴在卡片底部——
+ * 和静态卡片的 .details 用 flex-grow 撑开是同一个道理。
+ * 最小高度按「一行标题 + 两行摘要 + 一行标签」给：空牌面（还没抽过）
+ * 和抽到短标题时都占住同样的高度，卡片不会一抽一缩。
+ */
+.random-pick__stage {
+  display: flex;
+  flex-grow: 1;
+  align-items: center;
+  min-width: 0;
+  min-height: 100px;
+  padding-top: 8px;
+}
+
+.random-pick__doc {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 还没抽过时的空牌面：只是一句引导，不做任何视觉渲染 */
+.random-pick__idle {
+  margin: 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.random-pick__link {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--vp-c-text-1);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+}
+
+.random-pick__link:hover {
+  color: var(--vp-c-brand-1);
+}
+
+/*
+ * 摘要固定截到两行：这张卡和旁边两张是等高的，抽到不同文章时高度必须可预期，
+ * 否则每次点「换一篇」都会把整行卡片带着一起跳。
+ * 同理，.random-pick__stage 的最小高度按「一行标题 + 两行摘要 + 一行标签」给，
+ * 抽卡前的空牌面也占住同样的位置。
+ */
+.random-pick__desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 6px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.random-pick__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/*
+ * 校准日期放在页脚那一行里，和按钮共用高度，不额外撑高卡片。
+ * 用 ISO 日期而不是「2026年5月16日」：卡片最窄时（三列断点附近）
+ * 只有 160px 左右，带「最后校准」四个字会换行。
+ */
+.random-pick__date {
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+}
+
+.random-pick__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.random-pick__button {
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.random-pick__button:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+/* 揭示动画只用很短的淡入淡出加一点位移，不做老虎机式的滚动 */
+.random-pick-reveal-enter-active,
+.random-pick-reveal-leave-active {
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.random-pick-reveal-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.random-pick-reveal-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .random-pick-reveal-enter-active,
+  .random-pick-reveal-leave-active {
+    transition: none;
+  }
+}
+
+/* ---- 正文里的 mermaid 图 ---- */
+
+/*
+ * 渲染前的 .language-mermaid 就是普通代码块，样式全部沿用默认主题
+ * （JS 未执行或渲染失败时，读者至少还能看到源码，这是有意的退路）。
+ *
+ * 渲染成功后要把代码块的底色去掉，否则深色底会盖在图上；
+ * 样式选择器带上 .vp-doc 是为了盖过默认主题的
+ * `.vp-doc [class*='language-']`（同特异性时靠书写顺序，这里直接压一级更稳）。
+ */
+.vp-doc .language-mermaid.mermaid-rendered {
+  padding: 16px 8px;
+  background: transparent;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.language-mermaid.mermaid-rendered svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
 }

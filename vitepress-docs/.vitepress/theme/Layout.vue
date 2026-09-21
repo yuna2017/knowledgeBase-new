@@ -8,11 +8,16 @@ import FrontmatterAuthors from './FrontmatterAuthors.vue'
 import ArticleViews from './ArticleViews.vue'
 import TopViews from './TopViews.vue'
 import PinnedArticles from './PinnedArticles.vue'
+import HomeCards from './HomeCards.vue'
 import RecruitBanner from './RecruitBanner.vue'
+import { useMermaid } from './mermaid'
 import { isAggregatePage, isRankableArticle } from './page-kind'
 
 const { Layout } = DefaultTheme
 const { page } = useData()
+
+// 把正文里的 ```mermaid 代码块渲染成图（按需加载 mermaid，见 mermaid.ts）
+useMermaid()
 
 /**
  * 标签页、标签子页和「最近更新」都是聚合入口，不是文章：
@@ -40,6 +45,11 @@ const isCountable = computed(() => isRankableArticle(page.value.relativePath))
         <FrontmatterAuthors />
       </template>
       <ArticleViews v-if="isCountable" />
+    </template>
+    <!-- index.md 改用 homeCards 键，默认主题的 features 行不再渲染，
+         这一行连同第三个格子里的「随便看看」由 HomeCards 渲染 -->
+    <template #home-features-before>
+      <HomeCards />
     </template>
     <template #home-features-after>
       <PinnedArticles />
