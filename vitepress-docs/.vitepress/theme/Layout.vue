@@ -55,5 +55,22 @@ const isCountable = computed(() => isRankableArticle(page.value.relativePath))
       <PinnedArticles />
       <TopViews />
     </template>
+    <!--
+      「缺什么？告诉我们」单独做成按钮，不再放在「参与维护」下拉里：
+      它是读者向站里提要求的动作，跟贡献指南 / 仓库说明 / 内容规范那些
+      「维护者看的文档」不是一类东西，埋进下拉基本没人点。
+
+      桌面端放在导航条最右边（这个 slot 紧挨汉堡按钮之前）；
+      手机上导航条放不下，改用下面那个 slot 进展开菜单。
+    -->
+    <template #nav-bar-content-after>
+      <a class="nav-wanted" href="/wanted" title="缺什么、哪里写错了，直接说一句">
+        <span class="nav-wanted__long">缺什么？告诉我们</span>
+        <span class="nav-wanted__short">反馈</span>
+      </a>
+    </template>
+    <template #nav-screen-content-after>
+      <a class="nav-wanted nav-wanted--screen" href="/wanted">缺什么？告诉我们</a>
+    </template>
   </Layout>
 </template>

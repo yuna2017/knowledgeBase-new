@@ -384,10 +384,13 @@ export default defineConfig({
       { text: '标签', link: '/tags' },
       { text: '最近更新', link: '/recent' },
       {
+        // 「缺什么？告诉我们」（/wanted）**不在这里**：它是一个「读者向站里提要求」的
+        // 动作，和贡献指南 / 仓库说明 / 内容规范这些「维护者看的文档」不是一类东西，
+        // 埋在下拉里基本没人点。现在它是导航条最右边一个独立按钮，
+        // 由 theme/Layout.vue 的 #nav-bar-content-after 渲染。
         text: '参与维护',
         items: [
           { text: '贡献指南', link: '/CONTRIBUTING' },
-          { text: '缺什么？告诉我们', link: '/wanted' },
           { text: '反馈执行状态', link: '/wanted-status' },
           { text: '仓库说明', link: '/README' },
           { text: '内容规范', link: '/CONTEXT' }

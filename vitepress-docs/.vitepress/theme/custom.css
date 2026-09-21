@@ -645,6 +645,77 @@
   background: var(--vp-c-default-soft);
 }
 
+/* ---- 导航条上的「缺什么？告诉我们」按钮 ----
+ *
+ * 由 theme/Layout.vue 的 #nav-bar-content-after 渲染（config.mts 的 nav 里没有它）。
+ * 它是全站最显眼的「找读者要东西」的入口，所以做成实心按钮，而不是又一个文字链接。
+ * 宽度不够时先缩成「反馈」两个字，再窄一点按钮本身也收小，最后（<768px）挪进
+ * 展开菜单 —— 那里是 #nav-screen-content-after，同一个 class，靠 --screen 调成整行。
+ */
+.nav-wanted {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 32px;
+  margin-left: 12px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--vp-c-brand-1);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 0.25s, color 0.25s;
+}
+
+.nav-wanted:hover {
+  background: var(--vp-c-brand-2);
+  color: #fff;
+}
+
+.nav-wanted__short {
+  display: none;
+}
+
+/* 导航条挤不下整套菜单之前，先缩成「反馈」两个字，别把菜单挤出去 */
+@media (max-width: 1279px) {
+  .nav-wanted__long {
+    display: none;
+  }
+
+  .nav-wanted__short {
+    display: inline;
+  }
+}
+
+/* 再窄一点（平板竖屏那一段）按钮本身也收小，给导航菜单让位 */
+@media (max-width: 1099px) {
+  .nav-wanted {
+    height: 28px;
+    margin-left: 8px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+}
+
+/* 手机端导航条放不下（由汉堡按钮接管），只有展开菜单里那一个显示 */
+@media (max-width: 767px) {
+  .nav-wanted:not(.nav-wanted--screen) {
+    display: none;
+  }
+}
+
+/* 展开菜单里的那一个：整行按钮，和菜单项对齐 */
+.nav-wanted--screen {
+  display: flex;
+  justify-content: center;
+  height: 40px;
+  margin: 24px 0 0;
+  font-size: 14px;
+}
+
 /* ---- 首页卡片行（替代默认主题的 features 行） ---- */
 
 /*
