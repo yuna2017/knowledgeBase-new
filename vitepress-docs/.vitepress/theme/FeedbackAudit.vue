@@ -395,21 +395,25 @@ onMounted(() => {
           :class="'fb-audit__item--' + item.status"
         >
           <div class="fb-audit__item-head">
+            <!-- 左边一律是「只显示」：这里展示的是提交时选的东西，不该能改 -->
             <span class="fb-audit__id">#{{ item.id }}</span>
-            <select
-              class="fb-audit__category"
-              :value="item.category"
-              aria-label="分类"
-              @change="setCategory(item, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="name in categories" :key="name" :value="name">{{ name }}</option>
-            </select>
+            <span class="fb-audit__tag fb-audit__tag--category">{{ item.category }}</span>
             <span class="fb-audit__tag" :class="{ 'fb-audit__tag--fix': item.kind === 'fix' }">
               {{ item.kind === 'fix' ? '勘误' : '缺口' }}
             </span>
             <span class="fb-audit__time">{{ item.createdAtText }}</span>
             <span v-if="item.suspicious" class="fb-audit__suspect">可疑</span>
             <span class="fb-audit__spacer" />
+            <!-- 右边一律是「操作」：改分类、改状态、删 -->
+            <select
+              class="fb-audit__category"
+              :value="item.category"
+              aria-label="改分类"
+              title="改分类：提交时选错了才需要动，公开统计按这一列聚合"
+              @change="setCategory(item, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="name in categories" :key="name" :value="name">{{ name }}</option>
+            </select>
             <select
               class="fb-audit__status"
               :class="'fb-audit__status--' + item.status"

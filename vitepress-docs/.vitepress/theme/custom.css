@@ -1268,6 +1268,13 @@ a.home-card:hover {
   color: var(--vp-c-warning-1);
 }
 
+/* 分类是主分类，跟「缺口/勘误」那个次要标签区分开，一眼能认出哪个是哪个 */
+.fb-audit__tag--category {
+  color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  font-weight: 600;
+}
+
 .fb-audit__time {
   font-size: 12px;
 }

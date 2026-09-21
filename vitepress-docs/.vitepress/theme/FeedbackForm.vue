@@ -292,19 +292,39 @@ async function flushPending() {
 
 /* ------------------------------------------------------------ 机器人验证 */
 
+/** 脚本被网络挡掉时不会有任何回调，只能靠这个兜底 */
+const TURNSTILE_TIMEOUT_MS = 12000
+
 /**
  * 加载 Turnstile。没配 site key 就什么都不做——页面不引入任何第三方脚本。
  *
- * 用隐式渲染（脚本自己扫 `.cf-turnstile` 并往表单里塞隐藏 input），
- * 所以这段代码只负责注入脚本和设主题，令牌不用自己接管。
+ * 用隐式渲染（脚本自己扫 `.cf-turnstile` 并把令牌塞进表单），所以这里只负责
+ * 注入脚本、设主题、接回调。
  *
- * 注意这是**尽力而为**：脚本被网络挡掉（大陆访问 challenges.cloudflare.com
- * 不一定稳）时验证组件不会出现，但表单照样能提交——服务端拿不到令牌只会
- * 把它标成可疑，不会拒。所以这里不重试、不阻塞，只给用户一句解释。
+ * **判断「加载成功没有」不能靠在自己那个 div 里找 iframe**：Turnstile 把 iframe
+ * 渲染到哪儿由它自己决定，不保证是那个 div 的后代。第一版就是这么写的，
+ * 结果明明加载成功了，页面上却一直挂着「验证组件没能加载出来」——误报比不报更糟。
+ * 现在用官方给的 `data-callback` / `data-error-callback`，它只支持传**全局函数名**。
+ *
+ * 这是尽力而为：脚本被挡（大陆访问 challenges.cloudflare.com 不一定稳）时
+ * 表单照样能提交——服务端拿不到令牌只会把它标成可疑，不会拒。
  */
 function loadTurnstile() {
   if (!TURNSTILE_SITE_KEY) return
   if (document.querySelector('script[data-dsh-turnstile]')) return
+
+  const turnstileWindow = window as Window & {
+    __kbTurnstileOk?: (token: string) => void
+    __kbTurnstileFail?: (code: string) => void
+  }
+  turnstileWindow.__kbTurnstileOk = () => {
+    // 挑战成功：万一兜底计时器已经报过警，这里撤回
+    turnstileStuck.value = false
+  }
+  turnstileWindow.__kbTurnstileFail = (code) => {
+    turnstileStuck.value = true
+    console.warn('[turnstile] 挑战失败：' + code)
+  }
 
   const container = turnstileEl.value
   // 站点自己的深浅色是手动切 class，不是系统偏好，所以显式告诉它用哪套
@@ -325,10 +345,12 @@ function loadTurnstile() {
   })
   document.head.appendChild(script)
 
-  // 兜底判断：给足时间还没渲染出 iframe，就当它没加载出来
+  // 兜底：脚本根本没加载出来时不会有任何回调。
+  // 在整个文档里找 Turnstile 的 iframe，而不是在容器内部找（见上面的说明）。
   window.setTimeout(() => {
-    if (!container || !container.querySelector('iframe')) turnstileStuck.value = true
-  }, 8000)
+    if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return
+    turnstileStuck.value = true
+  }, TURNSTILE_TIMEOUT_MS)
 }
 
 onMounted(() => {
@@ -460,6 +482,8 @@ onMounted(() => {
         data-size="flexible"
         data-appearance="interaction-only"
         data-theme="auto"
+        data-callback="__kbTurnstileOk"
+        data-error-callback="__kbTurnstileFail"
       />
       <p v-if="turnstileStuck" class="feedback-form__hint feedback-form__hint--block">
         验证组件没能加载出来。<strong>不影响提交</strong>——直接交就行，我们会人工过一遍。
