@@ -16,7 +16,7 @@
  * 3. 蜜罐字段对用户隐藏，脚本会填。服务端只把它标成「可疑」，**不丢**——
  *    浏览器自动填充有可能命中，真用户不该因此白填。
  */
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { TURNSTILE_ACTION, TURNSTILE_SITE_KEY } from '../shared/turnstile'
 
 const CATEGORIES = [
@@ -42,8 +42,6 @@ const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
 
 const formEl = ref<HTMLFormElement | null>(null)
 const turnstileEl = ref<HTMLElement | null>(null)
-/** 验证组件没加载出来时给一句解释——大陆访问 challenges.cloudflare.com 不一定稳 */
-const turnstileStuck = ref(false)
 
 const category = ref('')
 const kind = ref('gap')
@@ -308,71 +306,120 @@ async function flushPending() {
 
 /* ------------------------------------------------------------ 机器人验证 */
 
-/** 脚本被网络挡掉时不会有任何回调，只能靠这个兜底 */
-const TURNSTILE_TIMEOUT_MS = 12000
-
 /**
  * 加载 Turnstile。没配 site key 就什么都不做——页面不引入任何第三方脚本。
  *
- * 用隐式渲染（脚本自己扫 `.cf-turnstile` 并把令牌塞进表单），所以这里只负责
- * 注入脚本、设主题、接回调。
+ * 用**显式渲染**（`?render=explicit` + `turnstile.render()`），不是隐式渲染。
+ * 原因是这个站是 SPA：隐式渲染只在脚本文档加载时扫一遍 DOM，用户从别的页面
+ * 转回 `/wanted` 时不会重新扫，那个新出现的 `.cf-turnstile` 就永远是空的、
+ * 拿不到令牌，于是提交全被标成可疑。显式渲染在每次挂载时自己调一次，两种
+ * 情况都对。
  *
- * **判断「加载成功没有」不能靠在自己那个 div 里找 iframe**：Turnstile 把 iframe
- * 渲染到哪儿由它自己决定，不保证是那个 div 的后代。第一版就是这么写的，
- * 结果明明加载成功了，页面上却一直挂着「验证组件没能加载出来」——误报比不报更糟。
- * 现在用官方给的 `data-callback` / `data-error-callback`，它只支持传**全局函数名**。
+ * ⚠️ **这里刻意不做「加载成功了吗」的自检。** 做过两版，两版都误报：
  *
- * 这是尽力而为：脚本被挡（大陆访问 challenges.cloudflare.com 不一定稳）时
- * 表单照样能提交——服务端拿不到令牌只会把它标成可疑，不会拒。
+ *   1. 8 秒后在自己那个 div 里找 iframe —— iframe 渲染到哪儿由 Turnstile 决定，
+ *      不保证是它的后代；
+ *   2. 改成官方 `data-callback` + 在整个文档里找 iframe —— 仍然误报，因为回调
+ *      两秒就成功返回了，**12 秒后的兜底计时器又无条件把它覆盖成失败**。
+ *
+ * 而这个提示本身几乎没有价值：组件加载不出来时表单照样能提交，服务端只会把这条
+ * 标成可疑，用户在页面上看不到任何异常。一个只会误报、又帮不上忙的提示，
+ * 删掉比修第三版好。失败信号改为只写 console，给排查的人看。
+ *
+ * 结果进不了前端的，服务端兜着：拿不到令牌只会标可疑，不会拒。
  */
-function loadTurnstile() {
-  if (!TURNSTILE_SITE_KEY) return
-  if (document.querySelector('script[data-dsh-turnstile]')) return
+const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 
-  const turnstileWindow = window as Window & {
-    __kbTurnstileOk?: (token: string) => void
-    __kbTurnstileFail?: (code: string) => void
-  }
-  turnstileWindow.__kbTurnstileOk = () => {
-    // 挑战成功：万一兜底计时器已经报过警，这里撤回
-    turnstileStuck.value = false
-  }
-  turnstileWindow.__kbTurnstileFail = (code) => {
-    turnstileStuck.value = true
-    console.warn('[turnstile] 挑战失败：' + code)
-  }
-
-  const container = turnstileEl.value
-  // 站点自己的深浅色是手动切 class，不是系统偏好，所以显式告诉它用哪套
-  if (container) {
-    container.setAttribute(
-      'data-theme',
-      document.documentElement.classList.contains('dark') ? 'dark' : 'light'
-    )
-  }
-
-  const script = document.createElement('script')
-  script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
-  script.async = true
-  script.defer = true
-  script.setAttribute('data-dsh-turnstile', '1')
-  script.addEventListener('error', () => {
-    turnstileStuck.value = true
-  })
-  document.head.appendChild(script)
-
-  // 兜底：脚本根本没加载出来时不会有任何回调。
-  // 在整个文档里找 Turnstile 的 iframe，而不是在容器内部找（见上面的说明）。
-  window.setTimeout(() => {
-    if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return
-    turnstileStuck.value = true
-  }, TURNSTILE_TIMEOUT_MS)
+interface TurnstileApi {
+  render: (el: HTMLElement, options: Record<string, unknown>) => string
+  remove?: (id: string) => void
+  ready?: (cb: () => void) => void
 }
+
+/** 脚本只加载一次；存 promise 是为了并发调用不会插两个 script */
+let scriptPromise: Promise<boolean> | null = null
+let widgetId: string | null = null
+
+function loadTurnstileScript(): Promise<boolean> {
+  if (scriptPromise) return scriptPromise
+  scriptPromise = new Promise<boolean>((resolve) => {
+    const script = document.createElement('script')
+    script.src = TURNSTILE_SCRIPT
+    script.async = true
+    script.defer = true
+    script.addEventListener('load', () => resolve(true))
+    script.addEventListener('error', () => {
+      console.warn(
+        '[turnstile] 脚本加载失败（可能被网络挡了）。提交不受影响，' +
+        '这条会被标成可疑，在 /wanted-audit 里能看到。'
+      )
+      resolve(false)
+    })
+    document.head.appendChild(script)
+  })
+  return scriptPromise
+}
+
+async function mountTurnstile() {
+  if (!TURNSTILE_SITE_KEY) return
+  const container = turnstileEl.value
+  if (!container) return
+  if (!(await loadTurnstileScript())) return
+
+  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
+  if (!api || typeof api.render !== 'function') return
+
+  const start = () => {
+    // 重新挂载（SPA 转回来）时先把上一个清掉，否则容器里会叠两个
+    if (widgetId !== null && typeof api.remove === 'function') {
+      try {
+        api.remove(widgetId)
+      } catch {
+        // 清不掉就算了，下面直接覆盖
+      }
+      widgetId = null
+    }
+    try {
+      widgetId = api.render(container, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: TURNSTILE_ACTION,
+        // 站点自己的深浅色是手动切 class，不是系统偏好，所以显式指定
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+        size: 'flexible',
+        // 正常读者看不到它，只有 Turnstile 判定需要交互时才出现
+        appearance: 'interaction-only',
+        'error-callback': (code: string) => {
+          console.warn(
+            '[turnstile] 挑战失败：' + code + '。提交不受影响，这条会被标成可疑。'
+          )
+        }
+      })
+    } catch (error) {
+      console.warn('[turnstile] 渲染失败：' + String(error))
+    }
+  }
+
+  // 脚本 load 之后 API 未必已经就绪，官方的 ready() 才是等的正确姿势
+  if (typeof api.ready === 'function') api.ready(start)
+  else start()
+}
+
+onBeforeUnmount(() => {
+  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
+  if (widgetId !== null && api && typeof api.remove === 'function') {
+    try {
+      api.remove(widgetId)
+    } catch {
+      // 忽略
+    }
+    widgetId = null
+  }
+})
 
 onMounted(() => {
   startedAt = Date.now()
   restoreDraft()
-  loadTurnstile()
+  void mountTurnstile()
   void flushPending()
 })
 </script>
@@ -486,25 +533,11 @@ onMounted(() => {
     </div>
 
     <!--
-      机器人验证。site key 为空时整块不渲染，也就不加载任何第三方脚本；
-      用 interaction-only：正常读者根本看不到它，只有被判定可疑的才出现交互。
+      机器人验证的挂载点。site key 为空时整块不渲染，也就不加载任何第三方脚本。
+      用显式渲染，所以这里**不能带 .cf-turnstile class**（那是隐式渲染的标记），
+      参数由 mountTurnstile() 传给 turnstile.render()。
     -->
-    <div v-if="TURNSTILE_SITE_KEY" class="feedback-form__verify">
-      <div
-        ref="turnstileEl"
-        class="cf-turnstile"
-        :data-sitekey="TURNSTILE_SITE_KEY"
-        :data-action="TURNSTILE_ACTION"
-        data-size="flexible"
-        data-appearance="interaction-only"
-        data-theme="auto"
-        data-callback="__kbTurnstileOk"
-        data-error-callback="__kbTurnstileFail"
-      />
-      <p v-if="turnstileStuck" class="feedback-form__hint feedback-form__hint--block">
-        验证组件没能加载出来。<strong>不影响提交</strong>——直接交就行，我们会人工过一遍。
-      </p>
-    </div>
+    <div v-if="TURNSTILE_SITE_KEY" ref="turnstileEl" class="feedback-form__verify" />
 
     <div class="feedback-form__actions">
       <button class="feedback-form__submit" type="submit" :disabled="sending">

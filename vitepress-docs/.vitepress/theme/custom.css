@@ -948,12 +948,6 @@ a.home-card:hover {
   color: var(--vp-c-text-3);
 }
 
-/* 单独成段的提示：不要那个左侧缩进 */
-.feedback-form__hint--block {
-  margin: 6px 0 0;
-  line-height: 1.6;
-}
-
 /*
  * 「要修正哪一篇」只在选了「已有内容要修正」时才出现。
  *
@@ -971,9 +965,13 @@ a.home-card:hover {
 }
 
 /*
- * Turnstile 容器。用 interaction-only，正常读者看不到它，
- * 所以这里留一点空间但不画框——不加载时不该在表单里留一个空盒子。
+ * Turnstile 的挂载点。用 interaction-only + 显式渲染，正常读者看不到它，
+ * 所以这里只留间距，不画框、不固定高度——没加载出来时不该在表单里留个空盒子。
  */
+.feedback-form__verify:empty {
+  display: none;
+}
+
 .feedback-form__verify {
   margin: 0 0 18px;
 }

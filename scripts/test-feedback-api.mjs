@@ -786,6 +786,21 @@ test('TURNSTILE_ACTION 前后端一致', () => {
   assert.equal(fromShared[1], fromApi[1], 'action 对不上会导致所有令牌被判无效')
 })
 
+test('不再有用户可见的「组件没加载出来」自检提示，且用显式渲染', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  // 那个提示误报过两版：先在容器里找 iframe，后改成回调 + 时长兜底，
+  // 后者的问题回调两秒就成功了、12 秒的计时器又把它覆盖成失败。
+  // 它帮不上忙（表单照样能交），所以删掉，别再让它回来。
+  assert.ok(!form.includes('没能加载出来'), '那个误报的提示又回来了')
+  assert.ok(!form.includes('turnstileStuck'), 'turnstileStuck 应当已删除')
+  // 隐式渲染只在文档加载时扫一次 DOM，SPA 从别的页面转回来时不会重扫
+  assert.ok(form.includes('render=explicit'), '应当用显式渲染')
+  assert.ok(form.includes('turnstile.render'), '应当显式调用 render')
+})
+
 /* ------------------------------------------------------------------ 路由 */
 
 test('未知路径 404', async () => {
