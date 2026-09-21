@@ -790,6 +790,22 @@ test('闸门在客户端：组件可用就先等验证走完，用不了直接�
   assert.ok(form.includes('TURNSTILE_WAIT_MS'), '缺少等待上限')
 })
 
+test('等 API 就绪用的是轮询，不是查一次', () => {
+  const form = readFileSync(
+    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
+    'utf8'
+  )
+  // 踩过的坑：api.js 只是个 302 引导，真正的包是它之后自己拉的，
+  // 所以 script 的 load 事件之后 window.turnstile.render 还不一定是函数。
+  // 查一次就放弃的话，结果是「脚本请求发出去了、一个挑战请求都没有」。
+  assert.ok(form.includes('waitForTurnstileApi'), '缺少「等 API 就绪」的逻辑')
+  assert.ok(form.includes('TURNSTILE_API_WAIT_MS'), '缺少等 API 的上限')
+  assert.ok(
+    form.includes('typeof api.render === \'function\''),
+    '就绪判定应当看 render 是不是函数'
+  )
+})
+
 test('TURNSTILE_ACTION 前后端一致', () => {
   const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
   const shared = readFileSync(

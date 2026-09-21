@@ -390,6 +390,8 @@ type TurnstileState = 'off' | 'pending' | 'ready' | 'failed'
 
 /** 等令牌的上限。等到头就放行——卡住的组件不该把人永远挡在门外 */
 const TURNSTILE_WAIT_MS = 10000
+/** 等 API 就绪的上限（见 waitForTurnstileApi） */
+const TURNSTILE_API_WAIT_MS = 8000
 
 /** 脚本只加载一次；存 promise 是为了并发调用不会插两个 script */
 let scriptPromise: Promise<boolean> | null = null
@@ -414,11 +416,44 @@ function loadTurnstileScript(): Promise<boolean> {
   return scriptPromise
 }
 
+/**
+ * 等 api.js 里那个真正的 API 就绪。
+ *
+ * ⚠️ **`script` 的 load 事件不代表 API 可用**，这是踩过的坑：
+ * `/turnstile/v0/api.js` 只是个 302 引导，真正的 86 KB 包是它之后自己再拉的
+ * （HAR 里这两条是分开的）。第一版在 load 之后只查一次 `window.turnstile.render`，
+ * 那会儿它还没就绪 → 直接放弃 → **脚本请求发出去了，但一个挑战请求都没有**。
+ *
+ * 所以这里轮询等，而不是查一次就走。等不到也不算崩——按设计直接放行。
+ */
+function waitForTurnstileApi(timeoutMs: number): Promise<TurnstileApi | null> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs
+    const tick = () => {
+      const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
+      if (api && typeof api.render === 'function') {
+        resolve(api)
+        return
+      }
+      if (Date.now() >= deadline) {
+        resolve(null)
+        return
+      }
+      window.setTimeout(tick, 100)
+    }
+    tick()
+  })
+}
+
 async function mountTurnstile() {
   if (!TURNSTILE_SITE_KEY) return
-  const container = turnstileEl.value
+  // ref 万一没绑上（v-if + 预渲染的组合）就退回按 class 找，别整块静默失效
+  const container =
+    turnstileEl.value ??
+    document.querySelector<HTMLElement>('.feedback-form__verify')
   if (!container) {
     turnstileState.value = 'failed'
+    console.warn('[turnstile] 找不到挂载点，按设计直接放行。')
     return
   }
   if (!(await loadTurnstileScript())) {
@@ -426,13 +461,17 @@ async function mountTurnstile() {
     return
   }
 
-  const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile
-  if (!api || typeof api.render !== 'function') {
+  const api = await waitForTurnstileApi(TURNSTILE_API_WAIT_MS)
+  if (!api) {
     turnstileState.value = 'failed'
+    console.warn('[turnstile] 等了 8 秒 API 都没就绪，按设计直接放行。')
     return
   }
 
+  let started = false
   const start = () => {
+    if (started) return
+    started = true
     // 重新挂载（SPA 转回来）时先把上一个清掉，否则容器里会叠两个
     if (widgetId !== null && typeof api.remove === 'function') {
       try {
@@ -473,9 +512,18 @@ async function mountTurnstile() {
     }
   }
 
-  // 脚本 load 之后 API 未必已经就绪，官方的 ready() 才是等的正确姿势
-  if (typeof api.ready === 'function') api.ready(start)
-  else start()
+  /*
+   * API 已经确认就绪（render 是个函数），所以这里其实可以直接 start()。
+   * 仍然先走一次官方 ready() 是保守做法，并且**加了兜底计时器**：
+   * ready() 万一不回调（它等的是「完全加载」，我们等的只是 render 可用），
+   * 2 秒后自己来一次。start() 内部有 started 守卫，不会渲染两遍。
+   */
+  if (typeof api.ready === 'function') {
+    api.ready(start)
+    window.setTimeout(start, 2000)
+  } else {
+    start()
+  }
 }
 
 /**
