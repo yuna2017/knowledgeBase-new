@@ -1,4 +1,5 @@
 ---
+description: Vibe Coding 使用指南：面向刚开始接触 AI IDE 和 Coding Agent 的同学，从中国大陆的使用限制与安全底线讲起，覆盖环境安装、API Key、Agent 流程与项目约定。
 tags:
   - Vibe Coding
   - AI工具

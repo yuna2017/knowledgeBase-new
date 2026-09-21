@@ -1,4 +1,5 @@
 ---
+description: 面向选型整理的 AI 编程工具说明：先解释 IDE 的作用，再对比 AI IDE 与普通 IDE 的差别，盘点常见的 CLI Coding Agent，最后给出按需求挑选工具的判断方法。
 tags:
   - 开发工具
   - AI工具

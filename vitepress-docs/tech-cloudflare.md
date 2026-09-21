@@ -1,4 +1,5 @@
 ---
+description: Cloudflare 免费计划覆盖 DNS、CDN、边缘计算和 Workers 等服务。本文按核心免费服务、常见用法和注意事项说明它适合哪些个人站点与小型 API，以及哪些情况仍会要求账单资料。
 tags:
   - Cloudflare
   - 免费资源

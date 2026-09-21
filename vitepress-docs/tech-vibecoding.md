@@ -1,4 +1,5 @@
 ---
+description: 第一次 Vibe Coding：从对话式原型入手，说明完全不会写代码时 AI 能帮到哪一步、对话编程能做和不能做哪些事，并解释 Vibe Coding 这种开发方式的边界。
 tags:
   - Vibe Coding
   - AI工具

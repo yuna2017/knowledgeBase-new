@@ -1,4 +1,5 @@
 ---
+description: CC Switch 是一个开源跨平台桌面应用，用来集中管理 Claude Code、Codex、Gemini CLI 等 AI 工具的供应商、MCP、Skills 和提示文件配置。本文介绍它的功能、安装与基本使用流程。
 tags:
   - AI工具
   - 开发工具

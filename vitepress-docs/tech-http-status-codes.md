@@ -1,4 +1,5 @@
 ---
+description: HTTP/HTTPS 状态码（返回码）速查与排查指南：解释五大类状态码的含义，给出 1xx 到 5xx 的完整对照表和常见误区，并说明 HTTPS 报错为什么不算状态码。
 tags:
   - HTTP
   - Web 基础

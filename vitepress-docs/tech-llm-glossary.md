@@ -1,4 +1,5 @@
 ---
+description: LLM 常用术语解释：沿一次实际任务串起 Prompt、Token、上下文、RAG、工具调用、Agent 和 MCP 等概念，说明它们各自所处的层面，并整理最容易混淆的几组词。
 tags:
   - AI工具
   - 入门
