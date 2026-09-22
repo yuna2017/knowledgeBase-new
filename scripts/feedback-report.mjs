@@ -235,7 +235,7 @@ async function main() {
       await query(
         `SELECT id, category, kind, want, scene, article, contact, status,
                 resolved_label, resolved_url, reject_reason, suspicious, flag_reason, created_at
-           FROM feedback ORDER BY suspicious ASC, created_at DESC LIMIT 200`
+           FROM feedback ORDER BY suspicious ASC, created_at DESC, id DESC LIMIT 200`
       )
     )
   }

@@ -39,6 +39,17 @@ const STATUS_HINT: Record<string, string> = {
   rejected: '这条没有被采纳。'
 }
 
+/**
+ * 「已上线」但维护者还没填链接时，别照着固定文案说「下面有链接」——
+ * 状态和链接是分两次保存的，中间有这个窗口，那句话会指向一片空白。
+ */
+function statusHint(data: LookupResult) {
+  if (data.status === 'done' && !data.resolved) {
+    return '已经写成页面了，只是维护者还没把链接填上，过一阵再来看看。'
+  }
+  return STATUS_HINT[data.status || ''] || ''
+}
+
 const ticket = ref('')
 const result = ref<LookupResult | null>(null)
 const invalid = ref(false)
@@ -135,7 +146,7 @@ onMounted(() => {
         </span>
       </p>
       <p class="fb-lookup__want">「{{ result.wantPreview }}」</p>
-      <p class="fb-lookup__hint">{{ STATUS_HINT[result.status || ''] || '' }}</p>
+      <p class="fb-lookup__hint">{{ statusHint(result) }}</p>
       <p v-if="result.resolved" class="fb-lookup__resolved">
         已经写好了：<a :href="result.resolved.url">{{ result.resolved.label }}</a>
       </p>

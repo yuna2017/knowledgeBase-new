@@ -605,17 +605,20 @@ onMounted(() => {
             提交者凭编号能看到这段字（见 FeedbackLookup.vue）；
             留空不算错，那边会显示一句兜底说明，不会是一片空白。
           -->
-          <div v-else-if="item.status === 'rejected'" class="fb-audit__resolve">
+          <div v-else-if="item.status === 'rejected'" class="fb-audit__resolve fb-audit__resolve--reject">
             <input
               v-model="item.rejectReason"
               type="text"
               maxlength="200"
-              placeholder="为什么不采纳（提交者凭编号能看到；留空则显示兜底说明）"
+              placeholder="为什么不采纳，比如「属于院系内部流程，站里写不了」"
               aria-label="不采纳原因"
             />
             <button class="fb-audit__ghost" type="button" @click="saveRejectReason(item)">
               保存原因
             </button>
+            <span class="fb-audit__resolve-note">
+              留空也可以：提交者会看到「维护者没有写明原因」，并附一个 QQ 群入口，不会是一片空白。
+            </span>
           </div>
         </li>
       </ul>

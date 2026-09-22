@@ -1681,7 +1681,7 @@ html.dark .fb-audit__status {
   line-height: 1.6;
 }
 
-/* 「已上线」才出现：给读者看的标签 + 链接 */
+/* 「已上线」才出现：给读者看的标签 + 链接；「不采纳」那个原因框也用这个布局 */
 .fb-audit__resolve {
   display: flex;
   flex-wrap: wrap;
@@ -1691,6 +1691,23 @@ html.dark .fb-audit__status {
   border: 1px dashed var(--vp-c-brand-3);
   border-radius: 8px;
   background: var(--vp-c-brand-soft);
+}
+
+/*
+ * 「不采纳」不是一件好事，别用品牌色去框它。
+ * 状态色里不采纳本来就是灰的（关闭），这里跟着用中性底。
+ */
+.fb-audit__resolve--reject {
+  border-color: var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+}
+
+/* 那个框里的一行说明：单独占一行，小字 */
+.fb-audit__resolve-note {
+  flex: 1 1 100%;
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .fb-audit__resolve input {

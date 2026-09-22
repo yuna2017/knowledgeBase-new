@@ -344,9 +344,9 @@ function schemaStatements(db) {
  * 老库缺的列。
  *
  * ⚠️ `CREATE TABLE IF NOT EXISTS` 对**已经存在**的表是空操作，**它不会补列**。
- * 线上那张 feedback 表是早先建的，后来陆续加了 `ticket`（查询码）和
- * `flag_reason`（可疑原因）——只改 DDL 不 ALTER 的话，INSERT 会报
- * `no such column: flag_reason`，症状是**所有提交 500、审计页也 500**，
+ * 线上那张 feedback 表是早先建的，后来陆续加了 `ticket`（查询码）、
+ * `flag_reason`（可疑原因）和 `reject_reason`（不采纳原因）——只改 DDL 不 ALTER 的话，
+ * INSERT 会报 `no such column: flag_reason`，症状是**所有提交 500、审计页也 500**，
  * 而 ensureSchema 的报错是被吞掉的，排查时根本看不到「建表失败」。
  *
  * 所以启动时按 PRAGMA 逐列比对，缺什么补什么。SQLite 不允许 ADD COLUMN 一个
@@ -922,12 +922,14 @@ async function handleList(request, env) {
   // 越界就夹到有效范围（比如刚把最后一页删空），别回一个空列表让人以为是筛选问题
   const page = Math.min(rawPage, pages)
 
+  // `, id DESC` 是分页的稳定键：只按 created_at 排的话，同一毫秒的两条谁先谁后由
+  // SQLite 自己定，翻页时可能重复出现一条、另一条永远看不到。
   const { results } = await env.DB.prepare(
     `SELECT id, ticket, category, kind, want, scene, article, contact, status,
             resolved_label, resolved_url, reject_reason, suspicious, flag_reason,
             created_at, updated_at
        FROM feedback` + where +
-    ' ORDER BY suspicious ASC, created_at DESC LIMIT ? OFFSET ?'
+    ' ORDER BY suspicious ASC, created_at DESC, id DESC LIMIT ? OFFSET ?'
   )
     .bind(...values, per, (page - 1) * per)
     .all()

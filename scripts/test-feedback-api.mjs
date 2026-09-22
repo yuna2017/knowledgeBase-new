@@ -614,8 +614,8 @@ function seedRows(total, fields = {}) {
       fields.suspicious ?? 0,
       fields.flagReason ?? null,
       'seed',
-      1000 + i,
-      1000 + i
+      fields.createdAt ?? 1000 + i,
+      fields.createdAt ?? 1000 + i
     )
   }
 }
@@ -649,6 +649,25 @@ test('审计列表分页：默认每页 20 条，越界页码夹回最后一页'
   const page1 = (await listAs('?page=1&per=20')).items.map((item) => item.id)
   const page2 = (await listAs('?page=2&per=20')).items.map((item) => item.id)
   assert.equal(new Set([...page1, ...page2]).size, 40)
+})
+
+test('分页的排序是稳定的：同一毫秒的两条不会重复出现、也不会漏掉', async () => {
+  // created_at 一样时，只按它排序的话 SQLite 给的顺序不保证稳定，
+  // OFFSET 分页就会让某条在两个页码里各出现一次，另一条永远看不到
+  seedRows(45, { createdAt: 5000 })
+
+  const all = []
+  for (const pageNo of [1, 2, 3]) {
+    const list = await listAs('?page=' + pageNo + '&per=20')
+    all.push(...list.items.map((item) => item.id))
+  }
+  assert.equal(all.length, 45)
+  assert.equal(new Set(all).size, 45, '三个页码拼起来必须正好是全部 45 条，不重不漏')
+
+  // 越界页码是「夹回最后一页」而不是返回空——空列表会被误读成「筛选没结果」
+  const over = await listAs('?page=4&per=20')
+  assert.equal(over.page, 3)
+  assert.equal(over.items.length, 5)
 })
 
 test('审计列表的筛选在服务端生效，非法值直接 400', async () => {
