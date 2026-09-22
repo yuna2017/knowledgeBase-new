@@ -14,6 +14,7 @@
  */
 import { onMounted, ref } from 'vue'
 import fallback from '../data/feedback-counts.json'
+import { FEEDBACK } from '../shared/contact'
 
 interface CategoryRow {
   category: string
@@ -84,7 +85,7 @@ onMounted(async () => {
     </p>
 
     <template v-else-if="stats.total === 0">
-      <p>还没有收到反馈。要不要来当第一个？<a href="/wanted">说一句就行</a>。</p>
+      <p>还没有收到反馈。要不要来当第一个？<a :href="FEEDBACK.path">说一句就行</a>。</p>
     </template>
 
     <template v-else>

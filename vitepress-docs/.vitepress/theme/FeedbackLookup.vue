@@ -11,10 +11,9 @@
  * 接口返回什么这里就显示什么，公开页面上不该有更多东西。
  */
 import { onMounted, ref } from 'vue'
-
-/** 与 shared/contact.ts 保持一致：想问一句时的去处 */
-const QQ_GROUP_NUMBER = '978801324'
-const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
+// 群号和「再提一条」的路径都从 shared/contact.ts 取（页脚、导航用的是同一份），
+// 免得哪天改了群号这里还留着旧的
+import { FEEDBACK, QQ_GROUP } from '../shared/contact'
 
 interface LookupResult {
   found: boolean
@@ -161,13 +160,13 @@ onMounted(() => {
         </template>
         <template v-else>
           维护者没有写明原因。想知道为什么、或者觉得应该写，到
-          <a :href="QQ_GROUP_URL" target="_blank" rel="noreferrer">QQ 群 {{ QQ_GROUP_NUMBER }}</a>
+          <a :href="QQ_GROUP.joinUrl" target="_blank" rel="noreferrer">QQ 群 {{ QQ_GROUP.number }}</a>
           说一句最快。
         </template>
       </p>
       <p class="fb-lookup__hint">
         编号 <code>{{ result.ticket }}</code>，可以留着以后再看。想补充点什么，直接
-        <a href="/wanted">再提一条</a>就行。
+        <a :href="FEEDBACK.path">再提一条</a>就行。
       </p>
     </div>
   </div>

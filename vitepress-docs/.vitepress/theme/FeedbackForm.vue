@@ -18,6 +18,8 @@
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import { TURNSTILE_ACTION, TURNSTILE_SITE_KEY } from '../shared/turnstile'
+// 提交不上时的最终退路（群号 + 一键加群）：和页脚、导航读的是同一份
+import { QQ_GROUP } from '../shared/contact'
 
 const CATEGORIES = [
   '校园网',
@@ -35,10 +37,6 @@ const CATEGORIES = [
 const STORAGE_DRAFT = 'kb-feedback-draft-v2'
 const STORAGE_PENDING = 'kb-feedback-pending-v2'
 const MAX_ATTEMPTS = 3
-
-/** 与 shared/contact.ts 保持一致：提交不上时的最终退路 */
-const QQ_GROUP_NUMBER = '978801324'
-const QQ_GROUP_URL = 'https://qm.qq.com/q/1DSuxKBV5a'
 
 const formEl = ref<HTMLFormElement | null>(null)
 const turnstileEl = ref<HTMLElement | null>(null)
@@ -296,7 +294,7 @@ async function copyToClipboard() {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
-      message.value = '已复制。把它粘贴到 QQ 群（群号 ' + QQ_GROUP_NUMBER + '）就可以。'
+      message.value = '已复制。把它粘贴到 QQ 群（群号 ' + QQ_GROUP.number + '）就可以。'
       return
     }
   } catch {
@@ -317,7 +315,7 @@ async function copyToClipboard() {
   }
   document.body.removeChild(area)
   message.value = copied
-    ? '已复制。把它粘贴到 QQ 群（群号 ' + QQ_GROUP_NUMBER + '）就可以。'
+    ? '已复制。把它粘贴到 QQ 群（群号 ' + QQ_GROUP.number + '）就可以。'
     : '复制失败，请手动选中表单内容再复制。'
 }
 
@@ -724,7 +722,7 @@ onUnmounted(() => {
 
     <p v-if="canFallback" class="feedback-form__fallback">
       一直提交不上也不影响：点「复制内容」，把内容粘贴到
-      <a :href="QQ_GROUP_URL" target="_blank" rel="noreferrer">QQ 群 {{ QQ_GROUP_NUMBER }}</a> 即可。
+      <a :href="QQ_GROUP.joinUrl" target="_blank" rel="noreferrer">QQ 群 {{ QQ_GROUP.number }}</a> 即可。
     </p>
   </form>
 </template>

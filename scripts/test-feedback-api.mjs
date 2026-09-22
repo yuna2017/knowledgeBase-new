@@ -1210,6 +1210,30 @@ test('令牌是一次性的：待发不留令牌、作废后要换新的、等�
   assert.ok(lockAt < waitAt, '上锁必须发生在等令牌之前')
 })
 
+test('反馈入口与群号只有一份定义，页面都从 shared/contact.ts 取', () => {
+  const read = (file) => readFileSync(resolve(repoRoot, file), 'utf8')
+  const contact = read('vitepress-docs/.vitepress/shared/contact.ts')
+  assert.ok(contact.includes("number: '978801324'"), '群号应当在 contact.ts 里定义')
+
+  // 这些地方以前各抄了一份群号 / 路径，改一处不会全站生效
+  for (const file of [
+    'vitepress-docs/.vitepress/theme/FeedbackForm.vue',
+    'vitepress-docs/.vitepress/theme/FeedbackLookup.vue',
+    'vitepress-docs/.vitepress/theme/FeedbackStatus.vue',
+    'vitepress-docs/.vitepress/theme/Layout.vue',
+    'vitepress-docs/.vitepress/config.mts'
+  ]) {
+    const source = read(file)
+    assert.ok(!source.includes('978801324'), file + ' 里又抄了一份群号，改成从 shared/contact.ts 取')
+    assert.ok(source.includes('shared/contact'), file + ' 没有引用 shared/contact.ts')
+  }
+
+  // 导航按钮的文字和路径也不能写死：页脚用的是 FEEDBACK.label / FEEDBACK.path
+  const layout = read('vitepress-docs/.vitepress/theme/Layout.vue')
+  assert.ok(layout.includes('FEEDBACK.path'), '导航按钮的路径写死了')
+  assert.ok(layout.includes('FEEDBACK.label'), '导航按钮的文字写死了')
+})
+
 test('TURNSTILE_ACTION 前后端一致', () => {
   const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
   const shared = readFileSync(

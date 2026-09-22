@@ -12,6 +12,9 @@ import HomeCards from './HomeCards.vue'
 import RecruitBanner from './RecruitBanner.vue'
 import { useMermaid } from './mermaid'
 import { isAggregatePage, isRankableArticle } from './page-kind'
+// 导航按钮的文字和路径都从这里取：页脚（config.mts）用的是同一个常量，
+// 改一处两处都会动，不会出现「页脚改了、导航还指着旧的」
+import { FEEDBACK } from '../shared/contact'
 
 const { Layout } = DefaultTheme
 const { page } = useData()
@@ -64,13 +67,13 @@ const isCountable = computed(() => isRankableArticle(page.value.relativePath))
       手机上导航条放不下，改用下面那个 slot 进展开菜单。
     -->
     <template #nav-bar-content-after>
-      <a class="nav-wanted" href="/wanted" title="缺什么、哪里写错了，直接说一句">
-        <span class="nav-wanted__long">缺什么？告诉我们</span>
+      <a class="nav-wanted" :href="FEEDBACK.path" title="缺什么、哪里写错了，直接说一句">
+        <span class="nav-wanted__long">{{ FEEDBACK.label }}</span>
         <span class="nav-wanted__short">反馈</span>
       </a>
     </template>
     <template #nav-screen-content-after>
-      <a class="nav-wanted nav-wanted--screen" href="/wanted">缺什么？告诉我们</a>
+      <a class="nav-wanted nav-wanted--screen" :href="FEEDBACK.path">{{ FEEDBACK.label }}</a>
     </template>
   </Layout>
 </template>
