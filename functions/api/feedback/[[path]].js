@@ -758,9 +758,13 @@ async function handleStats(env) {
     `SELECT category, status, COUNT(*) AS n FROM feedback
       WHERE suspicious = 0 GROUP BY category, status`
   ).all()
+  // 「已上线」的链接也是公开的，同样排除可疑条目：统计里不算它、
+  // 却给它挂一条公开链接，两处会对不上。
+  // （真要把可疑那条算数，先在审计页点「标记为正常」——那也是那一列存在的意义。）
   const published = await env.DB.prepare(
     `SELECT category, resolved_label, resolved_url FROM feedback
-      WHERE status = 'done' AND resolved_url IS NOT NULL AND resolved_url != ''
+      WHERE status = 'done' AND suspicious = 0
+        AND resolved_url IS NOT NULL AND resolved_url != ''
       ORDER BY updated_at DESC LIMIT 50`
   ).all()
 

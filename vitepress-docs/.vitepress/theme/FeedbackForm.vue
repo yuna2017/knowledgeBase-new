@@ -342,7 +342,10 @@ async function flushPending() {
 
   let payload: Record<string, unknown>
   try {
-    payload = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
+    // localStorage 里那坨东西可能是上一版留下的，甚至被人手改过：不是对象就当没有
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+    payload = parsed as Record<string, unknown>
   } catch {
     return
   }
@@ -351,6 +354,11 @@ async function flushPending() {
   // 走「没有令牌」那条路一定会被收下（标成可疑），而带一枚旧令牌只会被 400 拒掉。
   // 这里不现取一枚新令牌，是因为令牌一次性，抢来的那枚可能正好被读者自己
   // 点提交用掉，反而两边都失败。
+  //
+  // 再删一次，是因为**不能指望存进去的时候就干净**：这一版之前存下的 pending 里
+  // 就带着一枚早就作废的令牌。带上它会被 400 拒、失败又会被重新存一遍 —— 那条反馈
+  // 永远发不出去，每次打开页面还白试一次。
+  delete payload['cf-turnstile-response']
   const result = await postOnce(payload)
   if (result.ok) {
     message.value = '上次有一条没发送成功的反馈，刚才已经自动补发了（可能被标成可疑）。'
@@ -523,8 +531,11 @@ function readTurnstileToken(): string {
  * 所以这里刻意等得很短，而且只在客户端知道「组件压根没起来」时完全不等。
  */
 async function waitForTurnstileToken(): Promise<void> {
-  if (!TURNSTILE_SITE_KEY || turnstileUnavailable.value) return
+  if (!TURNSTILE_SITE_KEY) return
   if (readTurnstileToken()) return
+  // 之前判定「组件没起来」不等于现在还没起来：脚本可能只是慢（大陆网络尤其）。
+  // 只要 API 在了就照等等看；真的连 API 都没有才一秒不等，直接交。
+  if (turnstileUnavailable.value && !turnstileApi()) return
   message.value = '正在完成人机验证…'
   const deadline = Date.now() + TURNSTILE_WAIT_MS
   while (Date.now() < deadline) {

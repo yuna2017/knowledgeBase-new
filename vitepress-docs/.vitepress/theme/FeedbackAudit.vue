@@ -111,12 +111,22 @@ const categories = computed(() => {
 
 const unverifiedCount = computed(() => summary.value?.unverified ?? 0)
 
+/**
+ * 所有请求都走这里。**绝不抛异常**：网络断掉时 fetch 会 reject，
+ * 抛出去会让调用方卡在 loading = true 上（页面永远显示「读取中…」），
+ * 所以统一收敛成 `{ ok: false, status: 0 }`。
+ */
 async function request(url: string, init?: RequestInit) {
-  const res = await fetch(url, {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json', ...(init && init.headers ? init.headers : {}) },
-    ...init
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', ...(init && init.headers ? init.headers : {}) },
+      ...init
+    })
+  } catch {
+    return { ok: false, status: 0, data: null as any }
+  }
   let data: unknown = null
   try {
     data = await res.json()
@@ -152,6 +162,10 @@ async function login() {
     password.value = ''
     authed.value = true
     await load()
+    return
+  }
+  if (status === 0) {
+    message.value = '请求发不出去，检查一下网络。'
     return
   }
   if (status === 429) {
@@ -216,7 +230,7 @@ async function load() {
     message.value = '会话已过期，请重新登录。'
     return
   }
-  message.value = '读取失败，请稍后重试。'
+  message.value = status === 0 ? '请求发不出去，检查一下网络。' : '读取失败，请稍后重试。'
 }
 
 /** 筛选变了就回到第 1 页重拉（筛选在服务端，翻页只是换 OFFSET） */
@@ -249,7 +263,10 @@ async function patch(item: FeedbackItem, fields: Record<string, unknown>) {
     body: JSON.stringify({ id: item.id, ...fields })
   })
   if (!ok) {
-    message.value = '保存失败：' + (data?.error || ('HTTP ' + status))
+    message.value =
+      status === 0
+        ? '请求没发出去，这一条没保存上，检查一下网络再试。'
+        : '保存失败：' + (data?.error || ('HTTP ' + status))
     await load()
     return false
   }

@@ -163,9 +163,12 @@ async function main() {
     rows = await query(
       'SELECT category, status, COUNT(*) AS n FROM feedback WHERE suspicious = 0 GROUP BY category, status'
     )
+    // 和接口 handleStats() 里那条一模一样：公开链接同样排除可疑条目，
+    // 否则这份快照和实时数据会不一致（状态页平时读的是接口）
     publishedRows = await query(
       `SELECT category, resolved_label, resolved_url FROM feedback
-        WHERE status = 'done' AND resolved_url IS NOT NULL AND resolved_url != ''
+        WHERE status = 'done' AND suspicious = 0
+          AND resolved_url IS NOT NULL AND resolved_url != ''
         ORDER BY updated_at DESC LIMIT 50`
     )
     const sus = await query('SELECT COUNT(*) AS n FROM feedback WHERE suspicious = 1')

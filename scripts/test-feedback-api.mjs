@@ -860,6 +860,26 @@ test('统计带出「已上线」的标签与链接，且只带填了链接的',
   ])
 })
 
+test('可疑条目即使被标成「已上线」也不会挂到公开页上', async () => {
+  // 蜜罐命中 → suspicious = 1
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A)))
+  const id = rows('SELECT id FROM feedback')[0].id
+
+  await onRequestPost(ctx(post('/api/feedback/update', {
+    id, status: 'done', resolvedLabel: '看着像真的', resolvedUrl: '/something'
+  }, { Cookie: cookie })))
+
+  let stats = await onRequestGet(ctx(get('/api/feedback/stats'))).then((r) => r.json())
+  assert.deepEqual(stats.published, [], '可疑条目不该出现在公开链接里（统计里也没算它）')
+  assert.equal(stats.total, 0)
+
+  // 复核确认是真人写的 → 标记为正常 → 这时才该出现
+  await onRequestPost(ctx(post('/api/feedback/update', { id, suspicious: false }, { Cookie: cookie })))
+  stats = await onRequestGet(ctx(get('/api/feedback/stats'))).then((r) => r.json())
+  assert.equal(stats.published.length, 1)
+  assert.equal(stats.total, 1)
+})
+
 test('统计按分类聚合，状态分列', async () => {
   await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
   await onRequestPost(ctx(post('/api/feedback', { ...VALID, want: '再来一条' }, IP_A)))
@@ -1155,6 +1175,13 @@ test('令牌是一次性的：待发不留令牌、作废后要换新的、等�
   // SPA 转走时把 widget 摘掉，别在 Turnstile 的注册表里留孤儿
   assert.ok(form.includes('onUnmounted'), '缺少卸载时的清理')
   assert.ok(form.includes('remove?.(widgetId)'), '卸载时没有 remove 掉 widget')
+  // 补发时也要再删一次令牌：上一版存下的 pending 里带着一枚早就作废的令牌，
+  // 带上它会被 400 拒、失败又被重新存一遍 —— 那条反馈永远发不出去
+  const flushAt = form.indexOf('async function flushPending')
+  assert.ok(
+    form.indexOf("delete payload['cf-turnstile-response']", flushAt) > flushAt,
+    'flushPending 没有清掉旧 payload 里的令牌'
+  )
   // 等令牌之前就必须上锁，否则那几秒按钮还是可点的，连点会提交两次
   const from = form.indexOf('async function submitWithVerification')
   const lockAt = form.indexOf('sending.value = true', from)
