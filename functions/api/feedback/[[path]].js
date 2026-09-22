@@ -388,10 +388,15 @@ async function addColumn(db, name, type) {
     console.log('[feedback] 迁移：feedback 补上 ' + name + ' 列')
     return true
   } catch (error) {
-    // 列已经在了（重复执行、并发）不是问题；别的错误照抛
-    const message = String(error && error.message ? error.message : error)
-    if (/duplicate column/i.test(message)) return false
-    throw error
+    /*
+     * 列已经在了（重复执行、并发冷启动）——这是正常情况，不是故障。
+     *
+     * 这里**刻意不往上抛**：万一 D1 给的错误文案不是 `duplicate column`，
+     * 抛出去会让整个 ensureSchema 失败，把「少一列」升级成「接口整个不可用」。
+     * 真没补上的话，下面的自检会打一行 error，写库时也会立刻报 no such column。
+     */
+    console.warn('[feedback] 补列 ' + name + ' 没成功（多半是已经有了）', error)
+    return false
   }
 }
 
@@ -407,6 +412,18 @@ async function bootstrapSchema(db) {
   for (const [name, type] of MIGRATABLE_COLUMNS) {
     if (existing && existing.has(name)) continue
     await addColumn(db, name, type)
+  }
+
+  // 自检：补完再查一遍，还缺谁就明确报出来。
+  // 不然「少一列」的症状会藏在下一次写库的 500 里，排查时看不出是迁移的事。
+  const after = await existingColumns(db)
+  if (after) {
+    const missing = MIGRATABLE_COLUMNS
+      .filter(([name]) => !after.has(name))
+      .map(([name]) => name)
+    if (missing.length) {
+      console.error('[feedback] 这些列仍然缺失，写入会失败：' + missing.join(', '))
+    }
   }
 
   await db.batch(feedbackIndexSql().map((sql) => db.prepare(sql)))
