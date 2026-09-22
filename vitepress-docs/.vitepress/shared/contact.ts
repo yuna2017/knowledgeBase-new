@@ -1,8 +1,15 @@
 /**
- * 协会联系方式。
+ * 协会联系方式 / 反馈入口 / 招新文案的**唯一出处**。
  *
- * 页脚（.vitepress/config.mts）和首页的「加入我们」区块（theme/JoinUs.vue）
- * 都引用这里，改一处即可，不会出现两边不一致。
+ * 引用它的地方（改这里一处，全都跟着动）：
+ *   - `config.mts` 的页脚：ORGANIZATION、QQ_GROUP、FEEDBACK
+ *   - `theme/RecruitBanner.vue`：RECRUITMENT
+ *   - `theme/Layout.vue`：导航条上那个「缺什么？告诉我们」按钮（FEEDBACK.path / FEEDBACK.label）
+ *   - `theme/FeedbackForm.vue`、`theme/FeedbackLookup.vue`：提交不上时的退路（QQ_GROUP）
+ *   - `theme/FeedbackStatus.vue`：空状态里的「说一句就行」（FEEDBACK.path）
+ *
+ * 别在这些组件里再抄一份群号或路径：抄了就会各走各的，
+ * 而且不会有任何报错（`scripts/test-feedback-api.mjs` 里有一条断言盯着这件事）。
  *
  * 放群号而不是二维码：QQ / 微信群二维码会失效（微信群码只有 7 天），
  * 而站点是 git + CI 构建的，失效后不会有任何报错——图片照常显示，
@@ -34,7 +41,7 @@ export const FEEDBACK = {
   path: '/wanted',
   /** 公开的执行状态页 */
   statusPath: '/wanted-status',
-  /** 页脚那一行里显示的文字 */
+  /** 页脚那一行和导航条按钮上显示的文字 */
   label: '缺什么？告诉我们'
 }
 
@@ -47,6 +54,6 @@ export const FEEDBACK = {
  */
 export const RECRUITMENT = {
   enabled: false,
-  text: '协会招新进行中：加入 QQ 群 978801324，共建 YUNA 知识库',
+  text: '协会招新进行中：加入 QQ 群 ' + QQ_GROUP.number + '，共建 YUNA 知识库',
   link: QQ_GROUP.joinUrl
 }
