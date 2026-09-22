@@ -310,26 +310,19 @@ test('表单编码 + 校验失败跳回 /wanted?error=1', async () => {
   assert.ok((res.headers.get('Location') || '').indexOf('/wanted?error=1') >= 0)
 })
 
-/* ------------------------------------------------------------------ 限频 */
+/* ------------------------------------------------------------------ 提交侧不再限流 */
 
-test('短时间内超过 10 条触发限频（429），且不写库', async () => {
+/*
+ * 2026-09 把提交侧限流去掉了（站点访问量小）。这条钉住新行为：短时间连续提交
+ * 不再被 429 拦。哪天想加回来，它会红，提醒把文档和审计页一起改。
+ */
+test('短时间内连续提交不再限流（不返回 429）', async () => {
   const ip = { 'CF-Connecting-IP': '198.51.100.9' }
-  for (let i = 0; i < 10; i += 1) {
+  for (let i = 0; i < 15; i += 1) {
     const res = await onRequestPost(ctx(post('/api/feedback', VALID, ip)))
     assert.equal(res.status, 200, '第 ' + (i + 1) + ' 条被拒了')
   }
-  const res = await onRequestPost(ctx(post('/api/feedback', VALID, ip)))
-  assert.equal(res.status, 429)
-  assert.equal(count('feedback'), 10)
-})
-
-test('换一个来源不受影响（校园网 NAT 场景下额度按 IP 算）', async () => {
-  const ip = { 'CF-Connecting-IP': '198.51.100.10' }
-  for (let i = 0; i < 10; i += 1) {
-    await onRequestPost(ctx(post('/api/feedback', VALID, ip)))
-  }
-  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_B)))
-  assert.equal(res.status, 200)
+  assert.equal(count('feedback'), 15)
 })
 
 /* ------------------------------------------------------------------ 鉴权 */
@@ -911,150 +904,29 @@ test('统计按分类聚合，状态分列', async () => {
   assert.equal(stats.byCategory[0].byStatus.new, 2)
 })
 
-/* ------------------------------------------------------------------ 机器人验证 */
+/* ------------------------------------------------------------------ 可疑标记本身 */
 
-/**
- * 把 siteverify 的响应换成我们指定的。返回一个还原函数。
- * 只拦 siteverify，别的 fetch 原样放行。
+/*
+ * 人机验证整块撤掉了（2026-09）：服务端不再调 siteverify，也不再产生
+ * no_token / verify_down。这里留下的是和「可疑」这个标记本身有关的用例 ——
+ * 理由的优先级、批量删刻意不碰历史遗留的「未验证」、以及复核回路。
  */
-function stubSiteverify(impl) {
-  const original = globalThis.fetch
-  globalThis.fetch = async (url, init) => {
-    if (String(url).indexOf('siteverify') >= 0) return impl(url, init)
-    return original(url, init)
-  }
-  return () => {
-    globalThis.fetch = original
-  }
-}
 
-const siteverifyJson = (body, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  })
-
-const TURNSTILE_ENV = { TURNSTILE_SECRET_KEY: 'test-secret' }
-const TOKEN = { ...VALID, 'cf-turnstile-response': 'token-abc' }
-
-test('没配 secret：功能关闭，带不带令牌都正常入库', async () => {
-  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))
-  assert.equal(res.status, 200)
-  assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
-})
-
-test('验证通过：正常入库，不可疑', async () => {
-  const restore = stubSiteverify(async () => siteverifyJson({
-    success: true, hostname: 'docs.yuna.team', action: 'feedback'
-  }))
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 0)
-  } finally {
-    restore()
-  }
-})
-
-test('令牌无效：这是唯一会拒的情况，且不写库', async () => {
-  const restore = stubSiteverify(async () => siteverifyJson({
-    success: false, 'error-codes': ['invalid-input-response']
-  }))
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 400)
-    assert.equal(count('feedback'), 0)
-  } finally {
-    restore()
-  }
-})
-
-test('令牌是别的 action 签的：当成无效拒掉', async () => {
-  const restore = stubSiteverify(async () => siteverifyJson({
-    success: true, hostname: 'docs.yuna.team', action: 'login'
-  }))
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 400)
-    assert.equal(count('feedback'), 0)
-  } finally {
-    restore()
-  }
-})
-
-test('没有令牌：照收，但**标成可疑**（客户端闸门之后还没有令牌，说明组件没起来）', async () => {
-  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
-  assert.equal(res.status, 200, '不能因为没令牌就拒')
-  assert.equal(count('feedback'), 1, '更不能丢')
-  const row = rows('SELECT * FROM feedback')[0]
-  assert.equal(Number(row.suspicious), 1)
-  assert.equal(row.flag_reason, 'no_token')
-})
-
-test('siteverify 连不上：照收、标可疑（原因是验证不可达），不把表单拖死', async () => {
-  const restore = stubSiteverify(async () => {
-    throw new TypeError('network error')
-  })
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 200)
-    assert.equal(count('feedback'), 1)
-    const row = rows('SELECT * FROM feedback')[0]
-    assert.equal(Number(row.suspicious), 1)
-    assert.equal(row.flag_reason, 'verify_down')
-  } finally {
-    restore()
-  }
-})
-
-test('siteverify 超时（AbortError）：照收、标可疑，不拒', async () => {
-  const restore = stubSiteverify(async () => {
-    const error = new Error('aborted')
-    error.name = 'AbortError'
-    throw error
-  })
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
-  } finally {
-    restore()
-  }
-})
-
-test('siteverify 返回 internal-error：算服务不可用，照收、标可疑', async () => {
-  const restore = stubSiteverify(async () => siteverifyJson({
-    success: false, 'error-codes': ['internal-error']
-  }))
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 200, 'internal-error 不该拒用户')
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
-  } finally {
-    restore()
-  }
-})
-
-test('siteverify 返回 5xx：照收、标可疑', async () => {
-  const restore = stubSiteverify(async () => new Response('boom', { status: 502 }))
-  try {
-    const res = await onRequestPost(ctx(post('/api/feedback', TOKEN, IP_A), TURNSTILE_ENV))
-    assert.equal(res.status, 200)
-    assert.equal(Number(rows('SELECT suspicious FROM feedback')[0].suspicious), 1)
-  } finally {
-    restore()
-  }
-})
-
-test('蜜罐的理由不会被「没有令牌」顶掉（trap 优先）', async () => {
-  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A), TURNSTILE_ENV))
+test('蜜罐命中记 trap（不会被别的理由顶掉）', async () => {
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A)))
   assert.equal(rows('SELECT flag_reason FROM feedback')[0].flag_reason, 'trap')
 })
 
-test('「删掉蜜罐与过快」不碰未验证的条目', async () => {
-  // 一条蜜罐（可批删）、一条没令牌（不可批删）
-  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A), TURNSTILE_ENV))
-  await onRequestPost(ctx(post('/api/feedback', { ...VALID, want: '真反馈' }, IP_B), TURNSTILE_ENV))
+test('蜜罐和填得太快同时命中：理由是 trap', async () => {
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x', elapsed: 5 }, IP_A)))
+  assert.equal(rows('SELECT flag_reason FROM feedback')[0].flag_reason, 'trap')
+})
+
+test('「删掉蜜罐与过快」不碰历史遗留的「未验证」条目', async () => {
+  // 一条蜜罐（可批删）+ 一条 Turnstile 时代留下的 no_token（不可批删）。
+  // 后者接口已经不会再产生，只能直接写库来模拟老数据——老库里真有这类行。
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A)))
+  seedRows(1, { want: '当年的真反馈', suspicious: 1, flagReason: 'no_token' })
   assert.equal(count('feedback'), 2)
 
   const res = await onRequestPost(
@@ -1068,7 +940,7 @@ test('「删掉蜜罐与过快」不碰未验证的条目', async () => {
 })
 
 test('可以把可疑标记改回正常（复核那条回路）', async () => {
-  await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), TURNSTILE_ENV))
+  await onRequestPost(ctx(post('/api/feedback', { ...VALID, fb_trap: 'x' }, IP_A)))
   const id = rows('SELECT id FROM feedback')[0].id
   assert.equal(Number(rows('SELECT suspicious FROM feedback WHERE id = ?', id)[0].suspicious), 1)
 
@@ -1085,37 +957,6 @@ test('可以把可疑标记改回正常（复核那条回路）', async () => {
   assert.equal(stats.total, 1)
 })
 
-test('原生表单路径 + 令牌无效：跳 /wanted?error=verify', async () => {
-  const restore = stubSiteverify(async () => siteverifyJson({
-    success: false, 'error-codes': ['timeout-or-duplicate']
-  }))
-  try {
-    const body = new URLSearchParams({
-      category: '一卡通', kind: 'gap', want: 'x', scene: 'y',
-      'cf-turnstile-response': 'used-token'
-    })
-    const res = await onRequestPost(ctx(
-      new Request(BASE + '/api/feedback', { method: 'POST', body }),
-      TURNSTILE_ENV
-    ))
-    assert.equal(res.status, 303)
-    assert.ok((res.headers.get('Location') || '').indexOf('/wanted?error=verify') >= 0)
-  } finally {
-    restore()
-  }
-})
-
-test('令牌字段名前后端一致', () => {
-  const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
-  const form = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  // Turnstile 自己塞的隐藏 input 默认就叫这个名字，两边都得用同一个
-  assert.ok(api.includes("'cf-turnstile-response'"), '接口没读这个字段')
-  assert.ok(form.includes('cf-turnstile-response'), '表单没带上这个字段')
-})
-
 test('提交接口会返回查询码，前端也必须把它带去完成页', () => {
   const form = readFileSync(
     resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
@@ -1128,86 +969,27 @@ test('提交接口会返回查询码，前端也必须把它带去完成页', ()
   assert.ok(form.includes('data.ticket'), '前端没从响应体里读查询码')
 })
 
-test('闸门在客户端：组件可用就先等令牌，用不了就不等', () => {
+test('表单里没有任何第三方脚本（Turnstile 已撤）', () => {
   const form = readFileSync(
     resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
     'utf8'
   )
-  // 只有客户端知道组件加载出来没有，服务端只能看到有没有令牌
-  assert.ok(form.includes('waitForTurnstileToken'), '缺少「等令牌」的逻辑')
-  assert.ok(form.includes('readTurnstileToken'), '缺少「从表单读令牌」的逻辑')
-  assert.ok(form.includes('turnstileUnavailable'), '缺少「组件用不了」的标记')
-  // 等不到也一定要放行，不能把人永远挡在门外
-  assert.ok(form.includes('TURNSTILE_WAIT_MS'), '缺少等待上限')
-  // 判据必须是表单里那个隐藏 input —— 回调不保证触发，iframe 也不保证在哪
-  assert.ok(form.includes("'cf-turnstile-response'"), '没读那个隐藏 input')
-})
+  // 注意判据是「脚本地址 / 挂载点」，不是域名：注释里提到它没关系，
+  // 真正要防的是有人把那个 <script> 或 .cf-turnstile 容器加回来
+  assert.ok(!form.includes('turnstile/v0/api.js'), '又把 Turnstile 的脚本加回来了')
+  assert.ok(!form.includes('turnstileEl'), '还留着 Turnstile 的挂载点')
+  assert.ok(!form.includes('data-sitekey'), '还留着隐式渲染的标记')
 
-test('等 API 就绪用的是轮询，不是查一次', () => {
-  const form = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  // 踩过的坑：api.js 只是个 302 引导，真正的包是它之后自己拉的，
-  // 所以 script 的 load 事件之后 window.turnstile.render 还不一定是函数。
-  // 查一次就放弃的话，结果是「脚本请求发出去了、一个挑战请求都没有」。
-  assert.ok(form.includes('waitForTurnstileApi'), '缺少「等 API 就绪」的逻辑')
-  assert.ok(form.includes('TURNSTILE_API_WAIT_MS'), '缺少等 API 的上限')
-})
+  // 挡脚本只剩这两样，而且都只标记、不拦人
+  assert.ok(form.includes('name="fb_trap"'), '蜜罐字段没了')
+  assert.ok(form.includes('elapsed'), '填写耗时没了')
 
-test('没有用户可见的「组件没加载出来」提示，且主路径是隐式渲染', () => {
-  const form = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  // 那个提示误报过两版（先在容器里找 iframe，后改成回调 + 时长兜底），
-  // 而且它帮不上忙：组件加载不出来时表单照样能提交，用户看不到任何异常。
-  assert.ok(!form.includes('没能加载出来'), '那个误报的提示又回来了')
-  // 显式渲染试过一次，线上一个挑战请求都没有，退回隐式渲染——能用比优雅重要。
-  // 看的是脚本地址本身，不是注释里提到过这个词。
-  assert.ok(
-    !/TURNSTILE_SCRIPT = '[^']*render=explicit/.test(form),
-    '主路径不该再用显式渲染'
-  )
-  assert.ok(form.includes('cf-turnstile'), '隐式渲染需要 .cf-turnstile 这个 class')
-  assert.ok(form.includes('data-sitekey'), '隐式渲染需要 data-sitekey')
-})
-
-test('令牌是一次性的：待发不留令牌、作废后要换新的、等令牌前先上锁', () => {
-  const form = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  // 存本地待发时必须去掉令牌：它只能用一次，存了下次也用不了，
-  // 服务端会以「令牌无效」直接 400 拒掉，而失败又会再存一遍 —— 那条永远发不出去
-  assert.ok(
-    form.includes("delete safe['cf-turnstile-response']"),
-    'savePending 没有去掉一次性令牌'
-  )
-  // 服务端说令牌无效时要：清掉表单里那枚废令牌 + reset 组件重新出一枚
-  assert.ok(form.includes('function resetTurnstile'), '缺少换新令牌的逻辑')
-  assert.ok(
-    form.includes("input[name=\"cf-turnstile-response\"]"),
-    'resetTurnstile 没有清掉表单里作废的令牌'
-  )
-  assert.ok(form.includes('api.reset?.(widgetId)'), '显式渲染那条路 reset 要带上 widgetId')
-  // SPA 转走时把 widget 摘掉，别在 Turnstile 的注册表里留孤儿
-  assert.ok(form.includes('onUnmounted'), '缺少卸载时的清理')
-  assert.ok(form.includes('remove?.(widgetId)'), '卸载时没有 remove 掉 widget')
-  // 补发时也要再删一次令牌：上一版存下的 pending 里带着一枚早就作废的令牌，
-  // 带上它会被 400 拒、失败又被重新存一遍 —— 那条反馈永远发不出去
-  const flushAt = form.indexOf('async function flushPending')
-  assert.ok(
-    form.indexOf("delete payload['cf-turnstile-response']", flushAt) > flushAt,
-    'flushPending 没有清掉旧 payload 里的令牌'
-  )
-  // 等令牌之前就必须上锁，否则那几秒按钮还是可点的，连点会提交两次
-  const from = form.indexOf('async function submitWithVerification')
+  // 提交前先上锁：按钮可点的那一瞬间连点会提交两次
+  const from = form.indexOf('async function submit()')
+  assert.ok(from > 0, '没有 submit()')
   const lockAt = form.indexOf('sending.value = true', from)
-  const waitAt = form.indexOf('await waitForTurnstileToken()', from)
-  assert.ok(lockAt > 0, 'submitWithVerification 没有上锁')
-  assert.ok(waitAt > 0, 'submitWithVerification 没有等令牌')
-  assert.ok(lockAt < waitAt, '上锁必须发生在等令牌之前')
+  const sendAt = form.indexOf('await send(collect())', from)
+  assert.ok(lockAt > 0 && sendAt > 0 && lockAt < sendAt, '上锁必须发生在发请求之前')
 })
 
 test('反馈入口与群号只有一份定义，页面都从 shared/contact.ts 取', () => {
@@ -1232,18 +1014,6 @@ test('反馈入口与群号只有一份定义，页面都从 shared/contact.ts �
   const layout = read('vitepress-docs/.vitepress/theme/Layout.vue')
   assert.ok(layout.includes('FEEDBACK.path'), '导航按钮的路径写死了')
   assert.ok(layout.includes('FEEDBACK.label'), '导航按钮的文字写死了')
-})
-
-test('TURNSTILE_ACTION 前后端一致', () => {
-  const api = readFileSync(resolve(repoRoot, 'functions/api/feedback/[[path]].js'), 'utf8')
-  const shared = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/shared/turnstile.ts'),
-    'utf8'
-  )
-  const fromApi = api.match(/const TURNSTILE_ACTION = '([^']+)'/)
-  const fromShared = shared.match(/export const TURNSTILE_ACTION = '([^']+)'/)
-  assert.ok(fromApi && fromShared, '两边都要有 TURNSTILE_ACTION')
-  assert.equal(fromShared[1], fromApi[1], 'action 对不上会导致所有令牌被判无效')
 })
 
 /* ------------------------------------------------------------------ 路由 */

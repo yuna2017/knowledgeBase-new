@@ -35,8 +35,9 @@ const STATUS_LABEL = {
 
 /**
  * 可疑的原因，和审计页的 FLAG_LABEL 一致。
- * trap / fast 几乎可以确定是脚本；no_token / verify_down 很可能只是提交者的网络
- * 到不了 Cloudflare —— 里面是真反馈，所以这两类要单独报出来。
+ * trap / fast 几乎可以确定是脚本，是「删掉蜜罐与过快」批量清的对象；
+ * no_token / verify_down 是 Turnstile 时代的历史条目（人机验证已下线），
+ * 很可能只是当时网络到不了 Cloudflare 的真反馈，所以单独报出来。
  */
 const FLAG_LABEL = {
   trap: '可疑·蜜罐',
@@ -217,8 +218,9 @@ async function main() {
       }
       if (unverified) {
         console.log(
-          '  ⚠️ 未验证那 ' + unverified + ' 条**先看内容**：很可能只是网络到不了 ' +
-          'Cloudflare 的真反馈。确认是真人写的就点「标记为正常」，它会立刻计入统计。'
+          '  ⚠️ 「未验证」那 ' + unverified + ' 条是 Turnstile 时代的历史条目（人机验证已下线），' +
+          '很可能只是当时网络到不了 Cloudflare 的真反馈。确认是真人写的就点「标记为正常」，' +
+          '它会立刻计入统计。'
         )
       }
     }

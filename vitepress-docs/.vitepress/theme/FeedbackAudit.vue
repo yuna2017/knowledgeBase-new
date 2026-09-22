@@ -39,8 +39,10 @@ interface FeedbackItem {
 /**
  * 可疑的原因。**它们不是一回事**，所以要分开显示：
  *   trap / fast             几乎可以确定是脚本，是「删掉蜜罐与过快」批量清的对象
- *   no_token / verify_down  大概率是这个人的网络到不了 Cloudflare，里面混着真反馈
  *   manual                  维护者自己标的
+ *   no_token / verify_down  Turnstile 时代留下的历史条目（验证已下线，新条目不会再出现）。
+ *                           它们很可能只是当时网络到不了 Cloudflare 的真反馈，
+ *                           所以批量删刻意不碰，留在这里逐条看。
  */
 const FLAG_LABEL: Record<string, string> = {
   trap: '可疑·蜜罐',
@@ -55,7 +57,7 @@ interface Summary {
   total: number
   /** 全表可疑条数 */
   suspicious: number
-  /** 其中「没通过人机验证」的：no_token / verify_down */
+  /** 其中「没通过人机验证」的历史条目：no_token / verify_down */
   unverified: number
   /** 其中「蜜罐 / 过快」的：批量删除会删掉的条数 */
   deletable: number
@@ -336,14 +338,15 @@ async function removeAllSuspicious() {
   if (!deletable) {
     message.value =
       '现在没有「蜜罐 / 填得太快」的可疑条目。剩下 ' + total +
-      ' 条是「未验证 / 验证不可达」，只能逐条复核——确认是真人写的那条，点「标记为正常」。'
+      ' 条是 Turnstile 时代留下的「未验证 / 验证不可达」，只能逐条复核——' +
+      '确认是真人写的那条，点「标记为正常」。'
     return
   }
   if (
     !window.confirm(
       '删掉 ' + deletable + ' 条「蜜罐 / 填得太快」的可疑反馈？删掉之后无法恢复。\n\n' +
-      '当前 ' + total + ' 条可疑里有 ' + (total - deletable) + ' 条是「未验证 / 验证不可达」，' +
-      '这里不会动它们——那可能只是网络到不了 Cloudflare 的真反馈。'
+      '当前 ' + total + ' 条可疑里有 ' + (total - deletable) + ' 条是历史遗留的「未验证」，' +
+      '这里不会动它们——那可能只是当年网络到不了 Cloudflare 的真反馈。'
     )
   ) {
     return
@@ -444,9 +447,9 @@ onMounted(() => {
         <span
           v-if="unverifiedCount"
           class="fb-audit__suspect-count"
-          title="没有令牌或验证不可达，不计入公开统计；很可能只是网络到不了 Cloudflare 的真反馈，确认后点「标记为正常」"
+          title="Turnstile 时代的历史条目：当年没有令牌或验证不可达。不计入公开统计，很可能只是当时网络到不了 Cloudflare 的真反馈，确认后点「标记为正常」"
         >
-          其中未验证 {{ unverifiedCount }}
+          其中未验证（历史） {{ unverifiedCount }}
         </span>
         <span class="fb-audit__spacer" />
         <button class="fb-audit__ghost" type="button" @click="load">刷新</button>
@@ -455,7 +458,7 @@ onMounted(() => {
           v-if="summary && summary.suspicious"
           class="fb-audit__ghost fb-audit__ghost--danger"
           type="button"
-          title="只删「蜜罐」和「填得太快」两类；未验证的不动"
+          title="只删「蜜罐」和「填得太快」两类；历史遗留的「未验证」不动"
           @click="removeAllSuspicious"
         >
           删掉蜜罐与过快

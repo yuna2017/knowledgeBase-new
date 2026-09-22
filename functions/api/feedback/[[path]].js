@@ -28,12 +28,17 @@
  *      （浏览器自动填充会填蜜罐字段；粘贴一段准备好的文字三秒就能交），所以
  *      它们只把条目标成 `suspicious`，不阻止入库。真用户的内容一条都不能丢，
  *      机器人那点垃圾由维护者在审计页一次性批量删掉。
- *   2. **反垃圾不把可用性交出去。** 蜜罐、填写耗时、来源限频三样都是本地可判的。
- *      在此之上接了 Turnstile 机器人验证，判断标准就一条——**拿不到有效令牌
- *      就算没通过**：没有令牌（组件没加载出来 / 被网络挡住）与验证服务连不上，
- *      都照收并**带上原因**标成可疑，等维护者复核；只有 Cloudflare 明确说令牌
- *      无效才拒。这样既拿到了验证的强度，又不会重演「Cloudflare 一抖，表单直接
- *      不可用」——而这恰恰是接验证码最容易踩的坑（见 verifyTurnstile 的表格）。
+ *   2. **不为了防机器人牺牲可用性。** 挡脚本的只剩蜜罐和填写耗时，两样都是本地
+ *      可判、只标记不拦截，也没有任何第三方依赖。
+ *
+ *      2026-09 撤掉了 Turnstile 人机验证和提交侧限流：站点访问量很小，那个验证
+ *      要连 challenges.cloudflare.com（国内不一定通），冷启动时还要等一两秒，
+ *      换来的收益不值得。撤的时候是**整条链子一起撤**的（客户端脚本、服务端
+ *      siteverify、可疑原因、待办提醒里的「未验证」）——只清 site key 是危险的：
+ *      服务端只要还配着 TURNSTILE_SECRET_KEY，拿不到令牌就会把**每一条**都标成
+ *      可疑，公开统计直接归零。
+ *
+ *      登录侧（审计口令）的失败锁定**保留**，那是另一回事。
  *
  * 设计取舍见 docs/feedback-channel-design.md。
  */
@@ -80,24 +85,20 @@ const LABEL_MAX = 80
 const URL_MAX = 300
 /** 「不采纳」的原因上限。提交者凭编号能看到，所以别写太长 */
 const REJECT_MAX = 200
-/** Turnstile 令牌上限（官方给的硬上限） */
-const TOKEN_MAX = 2048
-/** siteverify 的等待上限，超时就当「验证服务不可用」降级，不能把提交挂死 */
-const VERIFY_TIMEOUT_MS = 5000
-/** 与前端 data-action 对应，用来确认这个令牌是给这张表单的 */
-const TURNSTILE_ACTION = 'feedback'
-const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
 /** 短于这个时长提交，只标记为可疑，不丢（见文件头第 1 条原则） */
 const MIN_FILL_MS = 3000
-/**
- * 限频：**按 IP 哈希**，而校园网出口通常是 NAT，成百上千人共用一个公网 IP，
- * 所以额度必须给得宽松——卡的是脚本洪峰，不是学生。
- * 收紧的话先看审计页的数据：COUNT(*) 与 COUNT(DISTINCT ip_hash) 的比值。
+/*
+ * 提交侧不做限流了（2026-09，站点没什么访问量，验证码也一起下了）。
+ * 现在挡住脚本的只剩两样**只标记、不拦截**的东西：蜜罐字段 + 填写耗时，
+ * 它们在审计页带原因显示，一键批量删。
+ *
+ * 想加回来也不难：feedback 表里仍然记着 ip_hash（加盐 SHA-256，不存原始 IP），
+ * 按它 COUNT 一下就行。
+ *
+ * ⚠️ 登录侧的锁定**保留**（下面这两个常量）：审计口令是公开页面上的一把钥匙，
+ * 没有次数限制就能被慢慢撞开，那是另一回事。
  */
-const BURST_MAX = 10
-const BURST_WINDOW_MS = 10 * 60 * 1000
-const DAY_MAX = 60
 /** 登录失败多少次后锁一段时间 */
 const LOGIN_FAIL_MAX = 5
 const LOGIN_WINDOW_MS = 15 * 60 * 1000
@@ -443,82 +444,6 @@ function ensureSchema(env) {
   return schemaReady
 }
 
-/* ------------------------------------------------------------------ Turnstile */
-
-/**
- * 机器人验证。**规则只有一条：拿到有效令牌才算通过。**
- *
- * | 状态 | 什么情况 | 怎么办 |
- * | --- | --- | --- |
- * | `off` | 没配 `TURNSTILE_SECRET_KEY` | 不验，走原来的蜜罐 + 耗时 + 限频 |
- * | `ok` | 令牌有效 | 正常入库，**不计可疑** |
- * | `missing` | 请求里没有令牌：组件没加载出来 / 被网络挡住 / 脚本压根没跑 | **照收，标可疑 `no_token`** |
- * | `unreachable` | 带了令牌但 siteverify 连不上/超时/`internal-error` | **照收，标可疑 `verify_down`** |
- * | `invalid` | 带了令牌，Cloudflare 明确说无效（伪造、过期、重放） | **拒**，这是唯一会拒的情况 |
- *
- * 为什么 `missing` 也收而不拒：这个站的表单是**渐进增强**的，脚本没跑起来时读者靠
- * 原生表单提交，那时候根本不可能有令牌。把「没有令牌」一律当机器人，就等于把这个
- * 退路废掉了。代价是这批条目会带着原因落进「可疑」——**不进公开统计**，等维护者
- * 在审计页逐条复核，确认是真人写的就点「标记为正常」，它立刻计入统计。
- * **宁可让维护者多点一下，也不要让真用户白填。**
- *
- * 为什么 `unreachable` 不拒：siteverify 在 Cloudflare 上，它抖动的时候正是我们
- * 最不希望表单瘫掉的时候。Cloudflare 自己把 `internal-error` 标成「重试即可」，
- * 那就重试——只不过重试之前先把它收下来。
- *
- * 「删掉蜜罐与过快」那个批量删除**刻意不碰** `no_token` / `verify_down`：
- * 这两类的成因很可能是「这个人的网络到不了 Cloudflare」，里面混着真反馈，
- * 不能跟着脚本垃圾一起清（见 handleDelete）。
- */
-async function verifyTurnstile(env, request, token) {
-  const secret = env.TURNSTILE_SECRET_KEY
-  if (typeof secret !== 'string' || secret.length === 0) return { state: 'off' }
-  if (!token) return { state: 'missing' }
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS)
-  try {
-    const res = await fetch(SITEVERIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret,
-        response: token,
-        remoteip: clientIp(request)
-      }),
-      signal: controller.signal
-    })
-
-    if (!res.ok) return { state: 'unreachable', detail: 'HTTP ' + res.status }
-
-    const data = await res.json().catch(() => null)
-    if (!data || typeof data !== 'object') {
-      return { state: 'unreachable', detail: 'unparsable body' }
-    }
-
-    const codes = Array.isArray(data['error-codes']) ? data['error-codes'] : []
-
-    if (data.success === true) {
-      // 令牌是给指定 action 签的；不匹配说明是别的表单的令牌被拿来重放
-      if (data.action && data.action !== TURNSTILE_ACTION) {
-        return { state: 'invalid', detail: 'action mismatch: ' + data.action }
-      }
-      return { state: 'ok', hostname: String(data.hostname || '') }
-    }
-
-    // internal-error 是 Cloudflare 自己的问题，不是用户的，按不可用处理
-    if (codes.includes('internal-error')) {
-      return { state: 'unreachable', detail: 'internal-error' }
-    }
-    return { state: 'invalid', detail: codes.join(',') || 'rejected' }
-  } catch (error) {
-    const reason = error && error.name === 'AbortError' ? 'timeout' : String(error)
-    return { state: 'unreachable', detail: reason }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 /* ------------------------------------------------------------------ 提交 */
 
 function clean(value, max) {
@@ -574,12 +499,13 @@ async function handleSubmit(context) {
   if (!fields) return fail(400, 'invalid body', '/wanted?error=1')
 
   /*
-   * 四条「可疑」的理由。注意它们**不是一回事**：
+   * 两种「可疑」的理由。两样都**只标记、不拦截**：
    *
-   *   trap        蜜罐被填              ┐ 几乎可以确定是脚本，是「删掉蜜罐与过快」
-   *   fast        填得太快              ┘ 批量清掉的那两类
-   *   no_token    请求里没有令牌        ┐ 大概率是这个人的网络到不了 Cloudflare，
-   *   verify_down siteverify 不可达     ┘ 里面混着真反馈，**不能跟着一起批量删**
+   *   trap  蜜罐被填     ┐ 几乎可以确定是脚本，是「删掉蜜罐与过快」批量清掉的那两类
+   *   fast  填得太快     ┘
+   *
+   * （还有第三种 `manual`：维护者在审计页手动标的。以及历史数据里的
+   *  `no_token` / `verify_down`——那是 Turnstile 时代留下的，机器关掉后不再产生。）
    *
    * 分开记理由，是为了让维护者既能一键清掉脚本垃圾，又不会连真稿子一起清；
    * 复核时看到某条其实是真人写的，点「标记为正常」它就计入公开统计。
@@ -600,20 +526,6 @@ async function handleSubmit(context) {
     console.warn('[feedback] 提交耗时 ' + elapsed + 'ms，标记为可疑但不丢弃')
   }
 
-  // 机器人验证（见 verifyTurnstile 的表格）：只有「令牌明确无效」才拒
-  const token = clean(fields['cf-turnstile-response'], TOKEN_MAX)
-  const verdict = await verifyTurnstile(env, request, token)
-  if (verdict.state === 'invalid') {
-    console.warn('[feedback] Turnstile 判定令牌无效：' + verdict.detail)
-    return fail(400, 'turnstile rejected the token', '/wanted?error=verify')
-  }
-  if (verdict.state === 'missing' || verdict.state === 'unreachable') {
-    // 照收，但标出来让维护者看一眼——**不拒人**，也**不当成没发生**
-    suspicious = 1
-    if (!flagReason) flagReason = verdict.state === 'missing' ? 'no_token' : 'verify_down'
-    console.warn('[feedback] Turnstile ' + verdict.state + '（' + verdict.detail + '），照收并标记')
-  }
-
   const category = clean(fields.category, 32)
   const kind = clean(fields.kind, 8)
   const want = clean(fields.want, WANT_MAX)
@@ -628,29 +540,12 @@ async function handleSubmit(context) {
   if (!want) return fail(400, 'empty want', '/wanted?error=1')
   if (!scene) return fail(400, 'empty scene', '/wanted?error=1')
 
+  // 仍然记一份加盐的来源哈希：现在不用它拦人，但想加回限流时有现成数据
   const hash = await ipHash(env, request)
   const now = Date.now()
 
   try {
     await ensureSchema(env)
-
-    const burst = await env.DB.prepare(
-      'SELECT COUNT(*) AS n FROM feedback WHERE ip_hash = ? AND created_at > ?'
-    )
-      .bind(hash, now - BURST_WINDOW_MS)
-      .first()
-    if (burst && Number(burst.n) >= BURST_MAX) {
-      return fail(429, 'too many submissions in a short time', '/wanted?error=rate')
-    }
-
-    const daily = await env.DB.prepare(
-      'SELECT COUNT(*) AS n FROM feedback WHERE ip_hash = ? AND created_at > ?'
-    )
-      .bind(hash, now - 24 * 3600 * 1000)
-      .first()
-    if (daily && Number(daily.n) >= DAY_MAX) {
-      return fail(429, 'too many submissions today', '/wanted?error=rate')
-    }
 
     const ticket = makeTicket()
     await env.DB.prepare(
@@ -997,6 +892,9 @@ async function handleList(request, env) {
   }
 
   let suspiciousTotal = 0
+  // 「未验证」现在只会出现在**历史数据**里（Turnstile 下线前落库的那些）。
+  // 单独数出来，是因为它们很可能只是当时网络到不了 Cloudflare 的真反馈，
+  // 而且「删掉蜜罐与过快」刻意不碰它们。
   let unverified = 0
   let deletable = 0
   for (const row of flagRows.results || []) {
@@ -1129,12 +1027,11 @@ async function handleDelete(context) {
   await ensureSchema(env)
 
   /*
-   * 一次性清掉「几乎可以确定是脚本」的那些。
+   * 一次性清掉「几乎可以确定是脚本」的那些：只有蜜罐和填得太快。
    *
-   * **刻意只删 trap / fast**，不含 no_token / verify_down：后两者的成因很可能是
-   * 「这个人的网络到不了 Cloudflare」，里面混着真实反馈。要是在整片不可达的时候
-   * 让这个按钮把它们一次清空，那就是拿一个误报删掉了所有人的稿子。
-   * 那两类留在列表里逐条判断，或者点「标记为正常」让它们计入统计。
+   * 刻意**不碰** `no_token` / `verify_down`（Turnstile 时代的历史条目）：那两类
+   * 的成因很可能是「当时这个人的网络到不了 Cloudflare」，里面混着真实反馈。
+   * 它们留在列表里逐条判断，或者点「标记为正常」让它们计入统计。
    */
   if (body && body.allSuspicious === true) {
     const result = await env.DB.prepare(

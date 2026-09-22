@@ -2,27 +2,9 @@
 description: 没找到想要的内容，或者发现哪篇写错了、过时了，都可以在这里说一声。不用会 Git，也不用注册账号。页面上还列了不收的几类内容、联系方式的用途，以及提交之后去哪里看进度。
 authors:
   - liugu2023
-# Turnstile 的资源提示。
-#
-# 脚本是在组件挂载之后才由 JS 注入的——在那之前，浏览器根本不知道还要连
-# challenges.cloudflare.com。于是「DNS → TCP → TLS → api.js → 真正的验证包」
-# 这一整串都排在页面加载**之后**才开始，白等一两秒。
-#
-# 这里先把能提前做的两件事做掉（都不执行脚本，所以不会在 hydrate 之前动 DOM）：
-#   preconnect / dns-prefetch：提前握手，省掉一整轮 DNS + TLS
-#   prefetch api.js：把那个 302 引导页先拿下来（它之后才会去拉真正的验证包）
-#
-# 只放在这一页：别的页面用不到验证，没必要替它们连第三方。
-head:
-  - - link
-    - rel: preconnect
-      href: https://challenges.cloudflare.com
-  - - link
-    - rel: dns-prefetch
-      href: https://challenges.cloudflare.com
-  - - link
-    - rel: prefetch
-      href: https://challenges.cloudflare.com/turnstile/v0/api.js
+# 这一页原来给 Turnstile 加过 preconnect / prefetch（脚本是挂载后才注入的，
+# 那时候浏览器还不知道要连 challenges.cloudflare.com）。验证整块撤掉之后，
+# 这些资源提示也一起删了：不能再为用不到的第三方连接预热。
 ---
 
 # 告诉我们缺什么

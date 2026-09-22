@@ -42,9 +42,10 @@ CREATE TABLE IF NOT EXISTS feedback (
   resolved_label TEXT,                       -- 已上线：给读者看的短标签
   resolved_url   TEXT,                       -- 已上线：文章地址
   reject_reason  TEXT,                       -- 不采纳：为什么（提交者凭编号能看到，空着就显示兜底说明）
-  suspicious     INTEGER NOT NULL DEFAULT 0,  -- 蜜罐 / 太快 / 没通过人机验证，只标记不丢弃
-  flag_reason    TEXT,                        -- 可疑的原因：trap / fast / no_token / verify_down / manual
-  ip_hash        TEXT,
+  suspicious     INTEGER NOT NULL DEFAULT 0,  -- 蜜罐命中 / 填得太快，只标记不丢弃
+  flag_reason    TEXT,                        -- 可疑的原因：trap / fast / manual
+                                              -- （历史值 no_token / verify_down 来自已下线的 Turnstile）
+  ip_hash        TEXT,                        -- 加盐 SHA-256，不存原始 IP（限流已去掉，仍在记录）
   created_at     INTEGER NOT NULL,            -- epoch 毫秒
   updated_at     INTEGER,
   ticket         TEXT                         -- 查询码（形如 K7M2-9Q4P），提交者凭它查自己那条
