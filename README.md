@@ -21,12 +21,9 @@ npm run dev
 
 完整环境访问 `http://127.0.0.1:5173`。本地审计口令可配置在 `.dev.vars`，示例见 [.dev.vars.example](.dev.vars.example)。
 
-## 维护资料
+## 参与维护
 
-- [架构与开发](docs/architecture.md)：目录职责、本地环境与检查命令。
-- [部署与迁移](docs/feedback-deploy.md)：GitHub Actions 发布、Token 权限和故障处理。
-- [改进计划](docs/architecture-plan.md)：已完成的架构改进与验证记录。
-- [内容规范](vitepress-docs/CONTEXT.md)：术语、标签和时效信息的约定。
+文章的术语、标签和时效信息约定见[内容规范](vitepress-docs/CONTEXT.md)。
 
 生产环境通过 GitHub Actions 发布到 Cloudflare Pages；数据库迁移在发布前自动执行。
 

@@ -125,3 +125,6 @@ vitepress-docs/.vitepress/dist/
 
 # settings
 .obsidian
+
+# 内部设计资料仅在本地维护。
+/docs/

@@ -4,7 +4,7 @@ import { feedbackReceipt, prepareSubmission, restoreSubmission, submissionConten
 /**
  * 需求反馈表单。
  *
- * 设计要点（见 docs/feedback-channel-design.md）：
+ * 设计要点：
  *
  * 1. **渐进增强，不是「必须有 JS」**。模板里的 `<form method="post" action="/api/feedback">`
  *    是真实存在的：VitePress 会把组件渲染进预渲染的 HTML，所以在 JS 完全没加载成功

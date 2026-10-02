@@ -40,7 +40,6 @@
  *
  *      登录侧（审计口令）的失败锁定**保留**，那是另一回事。
  *
- * 设计取舍见 docs/feedback-channel-design.md。
  */
 
 import { CATEGORIES, FEEDBACK_KINDS, FEEDBACK_STATUSES, STATUS_LABEL, REQUEST_ID_RE } from '../../../shared/feedback-contract.js'

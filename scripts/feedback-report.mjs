@@ -186,7 +186,7 @@ async function main() {
     }
     console.error('读取 D1 失败：' + message)
     if (/no such column/i.test(message)) {
-      console.error('提示：列缺失说明补列迁移还没跑过。让站点先访问一次 /api/feedback（接口会自动补），或者手工执行 docs/feedback-deploy.md 里的 ALTER TABLE。')
+      console.error('提示：列缺失说明数据库迁移尚未完成。请先通过部署工作流执行迁移，接口不会自动补列。')
     }
     process.exit(1)
   }
