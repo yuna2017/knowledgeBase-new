@@ -1,208 +1,105 @@
-import {
-  existsSync,
-  readdirSync,
-  statSync
-} from 'node:fs'
-import { dirname, extname, relative, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, statSync } from 'node:fs'
+import { dirname, extname, relative, resolve } from 'node:path'
+import { loadDocuments, DOCS_ROOT } from '../shared/documents/catalog.mjs'
+import { normalizePagePath } from '../shared/documents/page-kind.mjs'
+import { tagPath } from '../shared/documents/tags.mjs'
+import { collectSourceLinks } from '../shared/documents/links.mjs'
 
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const docsRoot = resolve(projectRoot, 'vitepress-docs')
-const ignoredDirectories = new Set(['.vitepress', 'node_modules'])
-
-function walkMarkdown(directory) {
-  const files = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
-    const fullPath = resolve(directory, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...walkMarkdown(fullPath))
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      // 跳过 VitePress 动态路由模板（如 tags/[tag].md）：
-      // 它不是一个真实页面，实际路由由同名的 .paths.ts 在构建时生成
-      if (entry.name.includes('[')) continue
-      files.push(fullPath)
-    }
-  }
-  return files
-}
-
-function posixRelative(path) {
-  return relative(docsRoot, path).split(sep).join('/')
-}
-
-function lineNumber(text, index) {
-  return text.slice(0, index).split('\n').length
-}
-
-function resolveLocalTarget(sourceFile, rawTarget) {
-  const withoutFragment = rawTarget.split('#', 1)[0].split('?', 1)[0]
-  if (!withoutFragment) return null
-
-  let decoded
-  try {
-    decoded = decodeURIComponent(withoutFragment)
-  } catch {
-    decoded = withoutFragment
-  }
-
-  const isRootPath = decoded.startsWith('/')
-  const routePath = decoded.replace(/^\/+/, '')
-  const basePath = isRootPath
-    ? resolve(docsRoot, routePath)
-    : resolve(dirname(sourceFile), decoded)
-  const extension = extname(basePath)
-  const candidates = []
-
-  if (!routePath && isRootPath) {
-    candidates.push(resolve(docsRoot, 'index.md'))
-  } else if (decoded.endsWith('/')) {
-    candidates.push(resolve(basePath, 'index.md'))
-  } else if (!extension) {
-    candidates.push(basePath + '.md', resolve(basePath, 'index.md'))
-  } else if (extension === '.html') {
-    candidates.push(basePath.slice(0, -5) + '.md')
-  } else {
-    candidates.push(basePath)
-  }
-
-  if (isRootPath) {
-    candidates.push(resolve(docsRoot, 'public', routePath))
-  }
-
-  return candidates.find((candidate) => {
-    return existsSync(candidate) && statSync(candidate).isFile()
-  }) || null
-}
-
-const markdownFiles = walkMarkdown(docsRoot)
-const markdownSet = new Set(markdownFiles.map(posixRelative))
-const graph = new Map(markdownFiles.map((file) => [posixRelative(file), new Set()]))
-const taggedFiles = new Set()
+const pages = loadDocuments({ includeGit: false })
+const markdownSet = new Set(pages.map((page) => page.sourcePath))
+const graph = new Map(pages.map((page) => [page.sourcePath, new Set()]))
+const routes = new Map(pages.map((page) => [normalizePagePath(page.url), page.sourcePath]))
+const files = new Map(pages.map((page) => [page.filePath, page.sourcePath]))
 const errors = []
 let localReferenceCount = 0
 
-for (const sourceFile of markdownFiles) {
-  const sourceName = posixRelative(sourceFile)
-  const text = await import('node:fs/promises').then(({ readFile }) => {
-    return readFile(sourceFile, 'utf8')
-  })
-  const frontmatter = text.match(/^---\s*\n([\s\S]*?)\n---/)
-  if (frontmatter && /^tags:\s*$/m.test(frontmatter[1])) {
-    taggedFiles.add(sourceName)
-  }
-  const linkPattern = /!?\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g
-
-  for (const match of text.matchAll(linkPattern)) {
-    const rawTarget = match[1].replace(/^<|>$/g, '')
-    if (
-      rawTarget.startsWith('#') ||
-      rawTarget.startsWith('//') ||
-      /^[a-z][a-z\d+.-]*:/i.test(rawTarget)
-    ) {
-      continue
-    }
-
-    localReferenceCount += 1
-    if (rawTarget.includes('\\')) {
-      errors.push(
-        sourceName + ':' + lineNumber(text, match.index) +
-        ' 使用了反斜杠路径：' + rawTarget
-      )
-      continue
-    }
-
-    const resolvedTarget = resolveLocalTarget(sourceFile, rawTarget)
-    if (!resolvedTarget) {
-      errors.push(
-        sourceName + ':' + lineNumber(text, match.index) +
-        ' 找不到目标：' + rawTarget
-      )
-      continue
-    }
-
-    if (resolvedTarget.endsWith('.md')) {
-      const targetName = posixRelative(resolvedTarget)
-      if (markdownSet.has(targetName)) {
-        graph.get(sourceName).add(targetName)
-      }
-    }
+// These are the same actual tag routes emitted by [tag].paths.ts.
+for (const page of pages) {
+  if (page.kind === 'home') continue
+  for (const tag of page.tags) {
+    const route = tagPath(tag)
+    const key = '@tag:' + tag
+    if (!graph.has(key)) graph.set(key, new Set())
+    graph.get(key).add(page.sourcePath)
+    graph.get('tags.md')?.add(key)
+    routes.set(normalizePagePath(route), key)
   }
 }
 
-if (graph.has('tags.md')) {
-  for (const file of taggedFiles) graph.get('tags.md').add(file)
+function resolveTarget(page, target, wiki) {
+  const path = target.split(/[?#]/, 1)[0]
+  if (!path) return {}
+  let decoded
+  try { decoded = decodeURIComponent(path) } catch { decoded = path }
+  const rootPath = decoded.startsWith('/')
+  const basePath = rootPath ? resolve(DOCS_ROOT, '.' + decoded) : resolve(dirname(page.filePath), decoded)
+  const rel = relative(DOCS_ROOT, basePath).replace(/\\/g, '/')
+  const route = routes.get(normalizePagePath('/' + rel))
+  if (route) return { page: route }
+  if (wiki) {
+    const matches = pages.filter((candidate) =>
+      candidate.sourcePath.replace(/\.md$/, '') === decoded ||
+      candidate.sourcePath.split('/').pop().replace(/\.md$/, '') === decoded
+    )
+    if (matches.length === 1) return { page: matches[0].sourcePath }
+    if (matches.length > 1) return { error: '双向链接目标不唯一：' + target }
+  }
+  const candidates = [basePath]
+  if (rootPath) candidates.push(resolve(DOCS_ROOT, 'public', '.' + decoded))
+  if (!extname(basePath)) candidates.push(basePath + '.md', resolve(basePath, 'index.md'))
+  if (basePath.endsWith('.html')) candidates.push(basePath.slice(0, -5) + '.md')
+  for (const file of candidates) {
+    if (existsSync(file) && statSync(file).isFile()) {
+      if (file.endsWith('.md') && !files.has(file)) return { error: '目标不是站点页面：' + target }
+      return { page: files.get(file) }
+    }
+  }
+  return { error: '找不到目标：' + target }
+}
+
+for (const page of pages) {
+  for (const { target, line, wiki } of collectSourceLinks(page.content, page.frontmatter)) {
+    if (!target || target.startsWith('#') || target.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(target)) continue
+    localReferenceCount++
+    if (target.includes('\\')) {
+      errors.push(page.sourcePath + ':' + line + ' 使用了反斜杠路径：' + target)
+      continue
+    }
+    const resolved = resolveTarget(page, target, wiki)
+    if (resolved.error) errors.push(page.sourcePath + ':' + line + ' ' + resolved.error)
+    if (resolved.page) graph.get(page.sourcePath).add(resolved.page)
+  }
 }
 
 const reachable = new Set()
 const queue = ['index.md']
-while (queue.length > 0) {
+while (queue.length) {
   const current = queue.shift()
   if (reachable.has(current) || !graph.has(current)) continue
   reachable.add(current)
-  for (const target of graph.get(current)) queue.push(target)
+  queue.push(...graph.get(current))
 }
-
 for (const file of markdownSet) {
-  if (!reachable.has(file)) {
-    errors.push('无法从 index.md 到达文档：' + file)
-  }
+  if (!reachable.has(file)) errors.push('无法从 index.md 到达文档：' + file)
 }
 
-/*
- * 导航页收录完整性检查。
- *
- * tech-index.md 和 campus-index.md 都是手写的导航页，它们的分组和一句话介绍
- * 是编辑判断，自动生成的标签页替代不了。但手写清单会随着新文档的加入悄悄漂移——
- * 加过一次检查之前，已经有 4 篇文档没被收录。
- *
- * 这里把「漏收」从看不见的偏差变成构建失败：新增 tech-* / mcp-* / campus-*
- * 文档时，必须同时在对应导航页里加一条，否则 PR 检查和部署都不会通过。
- */
-const NAVIGATION_INDEXES = [
-  {
-    index: 'tech-index.md',
-    // 该导航页负责收录哪些文档，按文件名前缀判断
-    prefixes: ['tech-', 'mcp-']
-  },
-  {
-    index: 'campus-index.md',
-    prefixes: ['campus-']
-  }
-]
-
-for (const { index, prefixes } of NAVIGATION_INDEXES) {
+// Editorial navigation stays hand-written; new documents must be listed explicitly.
+for (const { index, prefixes } of [
+  { index: 'tech-index.md', prefixes: ['tech-', 'mcp-'] },
+  { index: 'campus-index.md', prefixes: ['campus-'] }
+]) {
   if (!graph.has(index)) {
     errors.push('导航页不存在：' + index)
     continue
   }
-
-  const listed = graph.get(index)
-  const shouldList = [...markdownSet].filter((file) => {
-    return (
-      file !== index &&
-      !file.includes('/') &&
-      prefixes.some((prefix) => file.startsWith(prefix))
-    )
-  })
-
-  for (const file of shouldList.sort()) {
-    if (!listed.has(file)) {
-      errors.push(
-        index + ' 未收录文档：' + file +
-        '（新增文档后请同步在该导航页中补一条链接）'
-      )
-    }
+  for (const file of markdownSet) {
+    if (file === index || !prefixes.some((prefix) => file.split('/').pop().startsWith(prefix))) continue
+    if (!graph.get(index).has(file)) errors.push(index + ' 未收录文档：' + file)
   }
 }
-
-if (errors.length > 0) {
-  console.error('文档检查失败：')
-  for (const error of errors) console.error('- ' + error)
-  process.exit(1)
+if (errors.length) {
+  console.error('文档检查失败：\n' + errors.map((error) => '- ' + error).join('\n'))
+  process.exitCode = 1
+} else {
+  console.log('文档检查通过：' + pages.length + ' 个页面，' + localReferenceCount + ' 个本地引用，全部可从首页到达。')
 }
-
-console.log(
-  '文档检查通过：' + markdownFiles.length +
-  ' 个页面，' + localReferenceCount + ' 个本地引用，全部可从首页到达。'
-)
