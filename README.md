@@ -1,76 +1,33 @@
 # YUNA KnowledgeBase
 
-YUNA KnowledgeBase 是面向燕山大学师生的在线生活指南，由燕山大学大学生网络信息协会维护。内容以解决实际问题为主，包括校园服务、学习资源、学生权益和常用技术工具。
+面向燕山大学师生的校园生活与学习指南，由燕山大学大学生网络信息协会维护，使用 VitePress 构建。
 
-分类方式已从旧版固定栏目（校园必备服务、免费资源、学习与科研、前沿工具）迁移为 **tags** 体系。每篇文章可以拥有多个 tags，通过 tags 聚合和检索来发现内容。
-
-- [文档首页](vitepress-docs/index.md)
-- [标签索引](vitepress-docs/tags.md)
-- [贡献指南](CONTRIBUTING.md)
-
-## 使用说明
-
-- 校园套餐、办事流程和系统界面可能按学期调整，请以学校当期通知和登录后的页面为准。
-- 海外服务的访问、注册、支付和地区政策可能不适用于中国大陆。技术上能够连接，不代表符合服务商条款。
-- 免费额度、软件版本和学生优惠变化较快。文章中的核验日期只表示当时状态，使用前仍应打开官方链接确认。
-- 涉及成绩、培养方案、推免、转专业和毕业要求时，以教务处、学院及本人适用年级的正式文件为准。
-- 每篇文章可以使用多个 tag，但应优先复用已有标签；确需新增时，要同步检查导航和近义标签。发现标签混乱时，可按[贡献指南](CONTRIBUTING.md)提交修正。
-
-## 参与维护
-
-内容有误或你有新的校内实测经验，可以阅读[贡献指南](CONTRIBUTING.md)后提交 Pull Request，也可以联系 <liugu0825@qq.com>。
-
-维护资料：
-
-- [标签索引](vitepress-docs/tags.md)
-- [内容术语与维护规范](vitepress-docs/CONTEXT.md)
+[在线阅读](https://docs.yuna.team) · [提交反馈](https://docs.yuna.team/wanted) · [贡献指南](CONTRIBUTING.md)
 
 ## 本地运行
 
-需要 Node.js 24（版本约定见 `.node-version`）。
-
-使用 npm（仓库已提交 `package-lock.json`，推荐）：
+使用 Node.js 24，在仓库根目录执行：
 
 ```sh
 npm ci
 npm run dev
 ```
 
-其他包管理器同样可以（项目是纯 ESM 依赖，无 npm 专有特性）：
+| 命令 | 用途 |
+| --- | --- |
+| `npm run dev:full` | 启动文档热更新、本地接口和本地数据库 |
+| `npm run build` | 构建站点，检查链接、锚点和搜索 |
+| `npm run verify` | 执行提交前的完整验证 |
 
-```sh
-# bun（生成的 bun.lock 已被 gitignore，请勿提交）
-bun install
-bun run dev
+完整环境访问 `http://127.0.0.1:5173`。本地审计口令可配置在 `.dev.vars`，示例见 [.dev.vars.example](.dev.vars.example)。
 
-# pnpm
-pnpm install
-pnpm dev
+## 维护资料
 
-# yarn（兼容，建议使用默认的 node-modules 链接模式）
-yarn install
-yarn dev
-```
+- [架构与开发](docs/architecture.md)：目录职责、本地环境与检查命令。
+- [部署与迁移](docs/feedback-deploy.md)：GitHub Actions 发布、Token 权限和故障处理。
+- [改进计划](docs/architecture-plan.md)：已完成的架构改进与验证记录。
+- [内容规范](vitepress-docs/CONTEXT.md)：术语、标签和时效信息的约定。
 
-注意：`build` 的 `prebuild` 钩子内部调用 `npm run check:docs`，无论用哪个包管理器都需要本机装有 npm；并且请不要混用多个包管理器提交各自的 lockfile。
+生产环境通过 GitHub Actions 发布到 Cloudflare Pages；数据库迁移在发布前自动执行。
 
-构建并同时检查本地文档链接与页面可达性：
-
-```sh
-npm run build   # 或 bun run build / pnpm build / yarn build
-```
-
-站点由 VitePress 构建，正文位于 `vitepress-docs`，静态图片位于 `vitepress-docs/images`。
-
-需要同时调试反馈、统计与数据库时，运行 `npm run dev:full`。它会自动迁移本地数据库，并启动带热更新和同源接口代理的完整站点；数据保存在本机，不连接生产数据库。审计口令可在 `.dev.vars` 中设置，示例见 `.dev.vars.example`。
-
-提交前运行 `npm run verify`，统一验证文档、接口、数据库迁移、构建后的链接与搜索，以及真实的本地 Pages 环境。
-
-- [架构与开发维护说明](docs/architecture.md)
-- [架构改进计划与进度](docs/architecture-plan.md)
-
-## 仓库
-
-- [GitHub：yuna2017/knowledgeBase-new](https://github.com/yuna2017/knowledgeBase-new)
-
-本项目内容采用 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans)（知识共享 署名—非商业性使用 4.0 国际）许可协议。
+内容采用 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans) 许可。参与修改请阅读贡献指南。
