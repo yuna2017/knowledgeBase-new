@@ -8,6 +8,8 @@ import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-in
 import { defineConfig } from 'vitepress'
 import { FEEDBACK, ORGANIZATION, QQ_GROUP } from './shared/contact'
 import { extractDescription, truncate } from './shared/markdown'
+import { tokenizeSearch, searchOptions } from '../../shared/search.mjs'
+import { isSearchablePage } from '../../shared/documents/page-kind.mjs'
 
 /** 站点正式域名，改域名时只改这一处。用于 canonical、og:url 和 sitemap。 */
 const SITE_URL = 'https://docs.yuna.team'
@@ -459,7 +461,17 @@ export default defineConfig({
 
     outline: [2, 3],
     search: {
-      provider: 'local'
+      provider: 'local',
+      options: {
+        miniSearch: {
+          options: { tokenize: tokenizeSearch },
+          searchOptions
+        },
+        _render(src, env, md) {
+          const html = md.render(src, env)
+          return isSearchablePage(env.relativePath, env.frontmatter) ? html : ''
+        }
+      }
     },
     socialLinks: [
       { icon: 'github', link: 'https://github.com/yuna2017/knowledgeBase-new' }
