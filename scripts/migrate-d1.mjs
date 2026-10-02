@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { migrateDatabase } from '../migrations/runner.mjs'
+import { parseD1Output } from './wrangler-d1-output.mjs'
 
 const args = process.argv.slice(2)
 if (args.includes('--help')) {
@@ -37,12 +38,11 @@ if (options.env) base.push('--env', options.env)
 function run(extra) {
   const output = execFileSync(process.execPath, [...base, ...extra], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024, windowsHide: true,
-    env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' }
+    // Wrangler prints the final JSON through its normal logger. Do not inherit
+    // error/none, which would suppress the result together with ordinary logs.
+    env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG: 'log' }
   })
-  const result = JSON.parse(output)
-  const entries = Array.isArray(result) ? result : [result]
-  if (entries.some((entry) => entry.success === false)) throw new Error('D1 rejected a migration query')
-  return entries
+  return parseD1Output(output)
 }
 
 const db = {
