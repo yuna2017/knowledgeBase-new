@@ -27,6 +27,8 @@ YUNA KnowledgeBase 是面向燕山大学师生的在线生活指南，由燕山�
 
 ## 本地运行
 
+需要 Node.js 24（版本约定见 `.node-version`）。
+
 使用 npm（仓库已提交 `package-lock.json`，推荐）：
 
 ```sh
@@ -59,6 +61,13 @@ npm run build   # 或 bun run build / pnpm build / yarn build
 ```
 
 站点由 VitePress 构建，正文位于 `vitepress-docs`，静态图片位于 `vitepress-docs/images`。
+
+需要同时调试反馈、统计与数据库时，运行 `npm run dev:full`。它会自动迁移本地数据库，并启动带热更新和同源接口代理的完整站点；数据保存在本机，不连接生产数据库。审计口令可在 `.dev.vars` 中设置，示例见 `.dev.vars.example`。
+
+提交前运行 `npm run verify`，统一验证文档、接口、数据库迁移、构建后的链接与搜索，以及真实的本地 Pages 环境。
+
+- [架构与开发维护说明](docs/architecture.md)
+- [架构改进计划与进度](docs/architecture-plan.md)
 
 ## 仓库
 
