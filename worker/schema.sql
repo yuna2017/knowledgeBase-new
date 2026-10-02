@@ -1,3 +1,5 @@
+-- Frozen migration 001 baseline. Do not edit its SQL; add a new version in migrations/.
+-- Setup/upgrade: node scripts/migrate-d1.mjs --local (or explicitly --remote).
 CREATE TABLE IF NOT EXISTS counters (
   page  TEXT PRIMARY KEY,
   views INTEGER NOT NULL DEFAULT 0
@@ -20,14 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_daily_views_day ON daily_views (day DESC);
 -- ---------------------------------------------------------------------------
 -- 需求反馈（/wanted 系列页面用）
 --
--- 由 Pages Function functions/api/feedback/[[path]].js 按需创建并读写，
--- 记在这里是为了让建表和接口在同一处可查。ip_hash 是加盐 SHA-256，
--- 只用于限频，**不存原始 IP**。
---
--- ⚠️ 这份建表语句在 functions/api/feedback/[[path]].js 的 schemaStatements()
--- 里有一份手工副本（Pages Functions 没有文件系统，读不到这个文件）。
--- scripts/test-feedback-api.mjs 会把两边建出来的表结构逐列比对，不一致就失败。
--- 改这里必须同时改那边。
+-- Requests never create or alter tables. The explicit migration runner adopts historical schemas.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS feedback (

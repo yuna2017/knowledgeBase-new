@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FEEDBACK_STATUSES as STATUSES } from '../../../shared/feedback-contract.js'
 /**
  * 状态页的计数表。
  *
@@ -36,12 +37,6 @@ interface Stats {
   updatedAtText?: string
 }
 
-const STATUSES = [
-  { key: 'new', label: '未看' },
-  { key: 'planned', label: '计划中' },
-  { key: 'done', label: '已上线' },
-  { key: 'rejected', label: '不采纳' }
-]
 
 const stats = ref<Stats>(fallback as Stats)
 const published = ref<Published[]>([])

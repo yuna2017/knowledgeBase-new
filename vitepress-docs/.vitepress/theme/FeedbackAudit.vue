@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CATEGORIES, FEEDBACK_STATUSES as STATUSES, STATUS_LABEL } from '../../../shared/feedback-contract.js'
 /**
  * 反馈审计页。
  *
@@ -66,20 +67,7 @@ interface Summary {
   byKind: { gap: number; fix: number }
 }
 
-const CATEGORIES = [
-  '校园网', '一卡通', '图书馆', '宿舍', '食堂快递',
-  '教务学籍', '校医院', '安全防骗', '技术资源', '其他'
-]
 
-const STATUSES = [
-  { key: 'new', label: '未看' },
-  { key: 'planned', label: '计划中' },
-  { key: 'done', label: '已上线' },
-  { key: 'rejected', label: '不采纳' }
-]
-const STATUS_LABEL: Record<string, string> = Object.fromEntries(
-  STATUSES.map((item) => [item.key, item.label])
-)
 
 const authed = ref<boolean | null>(null)
 const configured = ref(true)

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CATEGORIES } from '../../../shared/feedback-contract.js'
+import { feedbackReceipt, prepareSubmission, restoreSubmission, submissionContent } from '../../../shared/feedback-submission.js'
 /**
  * 需求反馈表单。
  *
@@ -24,18 +26,6 @@ import { onMounted, ref } from 'vue'
 // 提交不上时的最终退路（群号 + 一键加群）：和页脚、导航读的是同一份
 import { QQ_GROUP } from '../shared/contact'
 
-const CATEGORIES = [
-  '校园网',
-  '一卡通',
-  '图书馆',
-  '宿舍',
-  '食堂快递',
-  '教务学籍',
-  '校医院',
-  '安全防骗',
-  '技术资源',
-  '其他'
-]
 
 const STORAGE_DRAFT = 'kb-feedback-draft-v2'
 const STORAGE_PENDING = 'kb-feedback-pending-v2'
@@ -54,6 +44,8 @@ const trap = ref('') // 蜜罐
 const sending = ref(false)
 const message = ref('')
 const canFallback = ref(false)
+const receiptTicket = ref('')
+let activeSubmission: Record<string, unknown> | null = null
 
 let startedAt = 0
 
@@ -62,7 +54,7 @@ const KIND_LABEL: Record<string, string> = {
   fix: '已有内容需要修正'
 }
 
-function collect() {
+function collectFields() {
   return {
     category: category.value,
     kind: kind.value,
@@ -73,6 +65,12 @@ function collect() {
     fb_trap: trap.value,
     elapsed: Date.now() - startedAt
   }
+}
+
+function collect(): ReturnType<typeof collectFields> & { requestId: string } {
+  const payload = prepareSubmission(collectFields(), activeSubmission)
+  activeSubmission = payload
+  return payload
 }
 
 function sleep(ms: number) {
@@ -108,22 +106,28 @@ function restoreDraft() {
   }
   if (!raw) return
   try {
-    const saved = JSON.parse(raw)
-    if (typeof saved.category === 'string') category.value = saved.category
-    if (saved.kind === 'gap' || saved.kind === 'fix') kind.value = saved.kind
-    if (typeof saved.want === 'string') want.value = saved.want
-    if (typeof saved.scene === 'string') scene.value = saved.scene
-    if (typeof saved.article === 'string') article.value = saved.article
-    if (typeof saved.contact === 'string') contact.value = saved.contact
+    restoreFields(JSON.parse(raw))
   } catch {
     // 草稿坏了就当没有
   }
 }
 
-function clearDraft() {
+function restoreFields(saved: Record<string, unknown> | null) {
+  if (!saved) return
+  if (typeof saved.category === 'string') category.value = saved.category
+  if (saved.kind === 'gap' || saved.kind === 'fix') kind.value = saved.kind
+  if (typeof saved.want === 'string') want.value = saved.want
+  if (typeof saved.scene === 'string') scene.value = saved.scene
+  if (typeof saved.article === 'string') article.value = saved.article
+  if (typeof saved.contact === 'string') contact.value = saved.contact
+}
+
+function clearDraft(payload: Record<string, unknown>) {
   try {
-    localStorage.removeItem(STORAGE_DRAFT)
-    localStorage.removeItem(STORAGE_PENDING)
+    const pending = JSON.parse(localStorage.getItem(STORAGE_PENDING) || 'null')
+    if (pending?.requestId === payload.requestId) localStorage.removeItem(STORAGE_PENDING)
+    const draft = JSON.parse(localStorage.getItem(STORAGE_DRAFT) || 'null')
+    if (draft && submissionContent(draft) === submissionContent(payload)) localStorage.removeItem(STORAGE_DRAFT)
   } catch {
     // 忽略
   }
@@ -151,11 +155,14 @@ async function postOnce(payload: Record<string, unknown>): Promise<{
   reason: string
   ticket: string
 }> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
   try {
     const res = await fetch('/api/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
       credentials: 'same-origin',
       // keepalive：用户点完提交就切走或关标签页，请求也能发完
       keepalive: true
@@ -164,8 +171,10 @@ async function postOnce(payload: Record<string, unknown>): Promise<{
       // 查询码在这个响应体里，**不能只判断 ok 就把它扔掉**——
       // 用户拿不到编号就查不了自己那条，这个功能等于没做
       const data = await res.json().catch(() => null)
-      const ticket = data && typeof data.ticket === 'string' ? data.ticket : ''
-      return { ok: true, reason: '', ticket }
+      const ticket = feedbackReceipt(data)
+      return ticket
+        ? { ok: true, reason: '', ticket }
+        : { ok: false, reason: '没有收到完整的查询码，请重试确认提交结果', ticket: '' }
     }
     if (res.status === 429) {
       return { ok: false, reason: '提交太频繁了，请过一会儿再试', ticket: '' }
@@ -183,6 +192,8 @@ async function postOnce(payload: Record<string, unknown>): Promise<{
       reason: '请求没有发出去，可能是网络或接口暂时不可用',
       ticket: ''
     }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -190,17 +201,18 @@ async function postOnce(payload: Record<string, unknown>): Promise<{
 async function send(payload: Record<string, unknown>) {
   canFallback.value = false
   message.value = '提交中…'
+  // Persist before the first request: closing a tab must not lose the retry ID.
+  savePending(payload)
 
   let reason = '未知原因'
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const result = await postOnce(payload)
     if (result.ok) {
-      clearDraft()
+      clearDraft(payload)
+      receiptTicket.value = result.ticket
       message.value = '提交成功，正在跳转…'
       // 带上查询码，好让完成页直接显示它（服务端原生表单那条路也是这么跳的）
-      const target = result.ticket
-        ? '/wanted-done?t=' + encodeURIComponent(result.ticket)
-        : '/wanted-done'
+      const target = '/wanted-done?t=' + encodeURIComponent(result.ticket)
       window.location.assign(target)
       return
     }
@@ -240,7 +252,7 @@ function retry() {
 /* ------------------------------------------------------------ 复制兜底 */
 
 function buildPlainText() {
-  const data = collect()
+  const data = collectFields()
   const lines = [
     '【YUNA 知识库 · 需求反馈】',
     '分类：' + (data.category || '（未选）'),
@@ -297,13 +309,6 @@ async function flushPending() {
   }
   if (!raw) return
 
-  // 先移除再发，避免多标签页同时打开时重复提交
-  try {
-    localStorage.removeItem(STORAGE_PENDING)
-  } catch {
-    // 忽略
-  }
-
   let payload: Record<string, unknown>
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -317,12 +322,27 @@ async function flushPending() {
   // 老版本（Turnstile 时代）存下的待发里可能还带着一枚当年的一次性令牌。
   // 服务端现在根本不看这个字段，但删掉更干净，免得以后有人照着它写新逻辑。
   delete payload['cf-turnstile-response']
-  const result = await postOnce(payload)
-  if (result.ok) {
-    message.value = '上次有一条没发送成功的反馈，刚才已经自动补发了。'
-    return
+  sending.value = true
+  try {
+    payload = await restoreSubmission(payload)
+    activeSubmission = payload
+    if (!category.value && !want.value && !scene.value) restoreFields(payload)
+    savePending(payload)
+    const result = await postOnce(payload)
+    if (result.ok) {
+      clearDraft(payload)
+      receiptTicket.value = result.ticket
+      message.value = '上次的反馈已确认收到，查询码：' + result.ticket + '。'
+      return
+    }
+    canFallback.value = true
+    message.value = '上次的反馈还没有确认收到，可以重试；内容保留在本机。'
+  } catch {
+    canFallback.value = true
+    message.value = '上次的反馈暂时无法补发，内容仍保留在本机。'
+  } finally {
+    sending.value = false
   }
-  savePending(payload)
 }
 
 /* ------------------------------------------------------------ 机器人验证 */
@@ -464,6 +484,10 @@ onMounted(() => {
     </div>
 
     <p class="feedback-form__msg" role="status" aria-live="polite">{{ message }}</p>
+    <p v-if="receiptTicket" class="feedback-form__receipt">
+      查询码：<strong>{{ receiptTicket }}</strong> ·
+      <a :href="'/wanted-done?t=' + encodeURIComponent(receiptTicket)">查看提交回执</a>
+    </p>
 
     <p v-if="canFallback" class="feedback-form__fallback">
       一直提交不上也不影响：点「复制内容」，把内容粘贴到

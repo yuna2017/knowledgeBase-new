@@ -43,26 +43,9 @@
  * 设计取舍见 docs/feedback-channel-design.md。
  */
 
-const CATEGORIES = [
-  '校园网',
-  '一卡通',
-  '图书馆',
-  '宿舍',
-  '食堂快递',
-  '教务学籍',
-  '校医院',
-  '安全防骗',
-  '技术资源',
-  '其他'
-]
-const KINDS = new Set(['gap', 'fix'])
-const STATUSES = new Set(['new', 'planned', 'done', 'rejected'])
-const STATUS_LABEL = {
-  new: '未看',
-  planned: '计划中',
-  done: '已上线',
-  rejected: '不采纳'
-}
+import { CATEGORIES, FEEDBACK_KINDS, FEEDBACK_STATUSES, STATUS_LABEL, REQUEST_ID_RE } from '../../../shared/feedback-contract.js'
+const KINDS = new Set(FEEDBACK_KINDS)
+const STATUSES = new Set(FEEDBACK_STATUSES.map(({ key }) => key))
 
 /**
  * 查询码。
@@ -284,166 +267,6 @@ async function ipHash(env, request) {
     .slice(0, 32)
 }
 
-/* ------------------------------------------------------------------ 建表 */
-
-/**
- * ⚠️ 下面这段 DDL 是 `worker/schema.sql` 的手工副本。
- * Pages Functions 里没有文件系统，读不到那个 .sql，只能抄一份。
- *
- * 为了不让两份定义漂移，`scripts/test-feedback-api.mjs` 里有一条断言：
- * 把 worker/schema.sql 建出来的表结构和这里建出来的**逐列比对**，不一致就测试失败。
- * 改任何一份都要同时改另一份，否则 CI 会红。
- */
-let schemaReady = null
-
-function feedbackTableSql() {
-  return `CREATE TABLE IF NOT EXISTS feedback (
-         id             INTEGER PRIMARY KEY AUTOINCREMENT,
-         category       TEXT    NOT NULL,
-         kind           TEXT    NOT NULL,
-         want           TEXT    NOT NULL,
-         scene          TEXT    NOT NULL,
-         article        TEXT,
-         contact        TEXT,
-         status         TEXT    NOT NULL DEFAULT 'new',
-         resolved_label TEXT,
-         resolved_url   TEXT,
-         reject_reason  TEXT,
-         suspicious     INTEGER NOT NULL DEFAULT 0,
-         flag_reason    TEXT,
-         ip_hash        TEXT,
-         created_at     INTEGER NOT NULL,
-         updated_at     INTEGER,
-         ticket         TEXT
-       )`
-}
-
-/** 三条索引。`idx_feedback_ticket` 引用 ticket 列，**只能建在补列之后** */
-function feedbackIndexSql() {
-  return [
-    'CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC)',
-    'CREATE INDEX IF NOT EXISTS idx_feedback_ip ON feedback (ip_hash, created_at)',
-    // 查询码唯一。NULL 在 SQLite 里互不相等，所以迁移前的老行留空不会撞。
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_ticket ON feedback (ticket)'
-  ]
-}
-
-function loginTableSql() {
-  return `CREATE TABLE IF NOT EXISTS feedback_login_attempts (
-         ip           TEXT    PRIMARY KEY,
-         fails        INTEGER NOT NULL DEFAULT 0,
-         window_start INTEGER NOT NULL
-       )`
-}
-
-/** 给测试脚本用的完整定义：5 条 DDL，和 worker/schema.sql 一一对应 */
-function schemaStatements(db) {
-  return [feedbackTableSql(), loginTableSql(), ...feedbackIndexSql()].map((sql) => db.prepare(sql))
-}
-
-/**
- * 老库缺的列。
- *
- * ⚠️ `CREATE TABLE IF NOT EXISTS` 对**已经存在**的表是空操作，**它不会补列**。
- * 线上那张 feedback 表是早先建的，后来陆续加了 `ticket`（查询码）、
- * `flag_reason`（可疑原因）和 `reject_reason`（不采纳原因）——只改 DDL 不 ALTER 的话，
- * INSERT 会报 `no such column: flag_reason`，症状是**所有提交 500、审计页也 500**，
- * 而 ensureSchema 的报错是被吞掉的，排查时根本看不到「建表失败」。
- *
- * 所以启动时按 PRAGMA 逐列比对，缺什么补什么。SQLite 不允许 ADD COLUMN 一个
- * 「NOT NULL 且没有默认值」的列，所以下面每一条要么可空、要么带默认值。
- */
-const MIGRATABLE_COLUMNS = [
-  ['category', 'TEXT'],
-  ['kind', 'TEXT'],
-  ['want', 'TEXT'],
-  ['scene', 'TEXT'],
-  ['article', 'TEXT'],
-  ['contact', 'TEXT'],
-  ['status', "TEXT NOT NULL DEFAULT 'new'"],
-  ['resolved_label', 'TEXT'],
-  ['resolved_url', 'TEXT'],
-  ['reject_reason', 'TEXT'],
-  ['suspicious', 'INTEGER NOT NULL DEFAULT 0'],
-  ['flag_reason', 'TEXT'],
-  ['ip_hash', 'TEXT'],
-  ['created_at', 'INTEGER'],
-  ['updated_at', 'INTEGER'],
-  ['ticket', 'TEXT']
-]
-
-/** 表里现有的列。读不到就返回 null，调用方退回「逐条试着补」 */
-async function existingColumns(db) {
-  try {
-    const { results } = await db.prepare('PRAGMA table_info(feedback)').all()
-    return new Set((results || []).map((row) => String(row.name)))
-  } catch (error) {
-    console.warn('[feedback] 读 PRAGMA table_info 失败，改为逐条尝试补列', error)
-    return null
-  }
-}
-
-async function addColumn(db, name, type) {
-  try {
-    await db.prepare('ALTER TABLE feedback ADD COLUMN ' + name + ' ' + type).run()
-    console.log('[feedback] 迁移：feedback 补上 ' + name + ' 列')
-    return true
-  } catch (error) {
-    /*
-     * 列已经在了（重复执行、并发冷启动）——这是正常情况，不是故障。
-     *
-     * 这里**刻意不往上抛**：万一 D1 给的错误文案不是 `duplicate column`，
-     * 抛出去会让整个 ensureSchema 失败，把「少一列」升级成「接口整个不可用」。
-     * 真没补上的话，下面的自检会打一行 error，写库时也会立刻报 no such column。
-     */
-    console.warn('[feedback] 补列 ' + name + ' 没成功（多半是已经有了）', error)
-    return false
-  }
-}
-
-/**
- * 建表 → 补列 → 建索引。**顺序不能换**：老库上先建 ticket 的唯一索引会直接报
- * `no such column: ticket`，把整个初始化拖垮。
- */
-async function bootstrapSchema(db) {
-  await db.prepare(feedbackTableSql()).run()
-  await db.prepare(loginTableSql()).run()
-
-  const existing = await existingColumns(db)
-  for (const [name, type] of MIGRATABLE_COLUMNS) {
-    if (existing && existing.has(name)) continue
-    await addColumn(db, name, type)
-  }
-
-  // 自检：补完再查一遍，还缺谁就明确报出来。
-  // 不然「少一列」的症状会藏在下一次写库的 500 里，排查时看不出是迁移的事。
-  const after = await existingColumns(db)
-  if (after) {
-    const missing = MIGRATABLE_COLUMNS
-      .filter(([name]) => !after.has(name))
-      .map(([name]) => name)
-    if (missing.length) {
-      console.error('[feedback] 这些列仍然缺失，写入会失败：' + missing.join(', '))
-    }
-  }
-
-  await db.batch(feedbackIndexSql().map((sql) => db.prepare(sql)))
-}
-
-/**
- * 一个 isolate 里只跑一次；**失败不缓存**——否则一次偶发的 D1 抖动会让这个
- * isolate 后面每次请求都跳过建表，错误就沉到「查询报表不存在」里去了。
- */
-function ensureSchema(env) {
-  if (!schemaReady) {
-    schemaReady = bootstrapSchema(env.DB).catch((error) => {
-      console.error('[feedback] 建表 / 补列失败，下次请求会重试', error)
-      schemaReady = null
-    })
-  }
-  return schemaReady
-}
-
 /* ------------------------------------------------------------------ 提交 */
 
 function clean(value, max) {
@@ -540,27 +363,40 @@ async function handleSubmit(context) {
   if (!want) return fail(400, 'empty want', '/wanted?error=1')
   if (!scene) return fail(400, 'empty scene', '/wanted?error=1')
 
+  // Old clients and native forms remain supported. Enhanced clients keep one ID
+  // across retries, page reloads and background delivery.
+  const requestId = fields.requestId == null || fields.requestId === '' ? crypto.randomUUID() : fields.requestId
+  if (typeof requestId !== 'string' || !REQUEST_ID_RE.test(requestId)) {
+    return fail(400, 'invalid requestId', '/wanted?error=1')
+  }
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(JSON.stringify({ category, kind, want, scene, article, contact })))
+  const requestHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+
   // 仍然记一份加盐的来源哈希：现在不用它拦人，但想加回限流时有现成数据
   const hash = await ipHash(env, request)
   const now = Date.now()
 
   try {
-    await ensureSchema(env)
+
 
     const ticket = makeTicket()
     await env.DB.prepare(
       `INSERT INTO feedback
          (ticket, category, kind, want, scene, article, contact, status,
-          suspicious, flag_reason, ip_hash, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)`
+          suspicious, flag_reason, ip_hash, created_at, updated_at, request_id, request_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(request_id) DO NOTHING`
     )
       .bind(
         ticket, category, kind, want, scene, article || null, contact || null,
-        suspicious, flagReason || null, hash, now, now
+        suspicious, flagReason || null, hash, now, now, requestId, requestHash
       )
       .run()
 
-    return succeed(ticket)
+    const receipt = await env.DB.prepare('SELECT ticket, request_hash FROM feedback WHERE request_id = ?').bind(requestId).first()
+    if (!receipt) throw new Error('Feedback receipt is unavailable')
+    if (receipt.request_hash !== requestHash) return fail(409, 'requestId already used for different content', '/wanted?error=1')
+    return succeed(receipt.ticket)
   } catch (error) {
     console.error('[feedback] 写入失败', error)
     return fail(500, 'storage error', '/wanted?error=1')
@@ -582,7 +418,6 @@ async function handleLogin(context) {
   }
   const input = body && typeof body.password === 'string' ? body.password : ''
 
-  await ensureSchema(env)
   const hash = await ipHash(env, request)
   const now = Date.now()
 
@@ -658,7 +493,7 @@ function summarize(rows) {
 }
 
 async function handleStats(env) {
-  await ensureSchema(env)
+
 
   const totals = await env.DB.prepare(
     'SELECT COUNT(*) AS total FROM feedback WHERE suspicious = 0'
@@ -717,7 +552,6 @@ async function handleLookup(request, env) {
   const ticket = cleanTicket(new URL(request.url).searchParams.get('t'))
   if (!ticket) return json({ error: 'invalid ticket' }, 400)
 
-  await ensureSchema(env)
   const row = await env.DB.prepare(
     `SELECT ticket, category, kind, want, status,
             resolved_label, resolved_url, reject_reason, created_at, updated_at
@@ -778,7 +612,6 @@ function likePattern(value) {
 async function handleList(request, env) {
   if (!(await isAuthed(request, env))) return json({ error: 'unauthorized' }, 401)
 
-  await ensureSchema(env)
 
   const url = new URL(request.url)
 
@@ -1004,7 +837,6 @@ async function handleUpdate(context) {
   sets.push('updated_at = ?')
   values.push(Date.now(), id)
 
-  await ensureSchema(env)
   await env.DB.prepare(
     'UPDATE feedback SET ' + sets.join(', ') + ' WHERE id = ?'
   )
@@ -1024,7 +856,6 @@ async function handleDelete(context) {
     return json({ error: 'invalid json' }, 400)
   }
 
-  await ensureSchema(env)
 
   /*
    * 一次性清掉「几乎可以确定是脚本」的那些：只有蜜罐和填得太快。
@@ -1090,5 +921,4 @@ export async function onRequestPost(context) {
   return json({ error: 'not found' }, 404)
 }
 
-/** 供测试脚本比对「这里和 worker/schema.sql 是不是同一份定义」，并单独测补列迁移 */
-export { schemaStatements, bootstrapSchema, MIGRATABLE_COLUMNS, CATEGORIES, STATUSES }
+export { CATEGORIES, STATUSES }

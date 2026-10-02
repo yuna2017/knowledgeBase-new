@@ -29,10 +29,29 @@ const apiUrl = pathToFileURL(
   resolve(repoRoot, 'functions/api/feedback/[[path]].js')
 ).href
 
-const { onRequestGet, onRequestPost, schemaStatements, bootstrapSchema, CATEGORIES } =
+const { onRequestGet, onRequestPost, CATEGORIES } =
   await import(apiUrl)
 
 /* ------------------------------------------------------------------ 假 D1 */
+
+import { migrateDatabase, MIGRATIONS } from '../migrations/runner.mjs'
+import { prepareSubmission, restoreSubmission, submissionContent, feedbackReceipt } from '../shared/feedback-submission.js'
+
+function migrationDb(database) {
+  return {
+    async query(sql) { return database.prepare(sql).all() },
+    async execute(statements) {
+      database.exec('BEGIN')
+      try {
+        for (const sql of statements) database.exec(sql)
+        database.exec('COMMIT')
+      } catch (error) {
+        database.exec('ROLLBACK')
+        throw error
+      }
+    }
+  }
+}
 
 const sqlite = new DatabaseSync(':memory:')
 
@@ -69,14 +88,8 @@ const DB = {
 const PASSWORD = 'avery-long-random-passphrase-for-tests'
 const env = { DB, FEEDBACK_ADMIN_PASSWORD: PASSWORD }
 
-/*
- * 先把表建上。等价于线上第一次请求时 ensureSchema() 做的事——
- * 它在一个 isolate 里只跑一次，所以这里也只在测试开始前建一次。
- * 传个「原样返回 SQL」的桩就能拿到 DDL 原文。
- */
-for (const sql of schemaStatements({ prepare: (sql) => sql })) {
-  sqlite.exec(sql)
-}
+// Production runs the same explicit migrations before code is deployed.
+await migrateDatabase(migrationDb(sqlite))
 
 /* ------------------------------------------------------------------ 请求工具 */
 
@@ -126,103 +139,94 @@ beforeEach(async () => {
 
 /* ------------------------------------------------------------------ 表结构一致性 */
 
-test('worker/schema.sql 与接口里的 schemaStatements() 是同一份定义', () => {
-  const schemaSql = readFileSync(resolve(repoRoot, 'worker/schema.sql'), 'utf8')
-  const fromFile = schemaSql
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s && /create/i.test(s) && /feedback/i.test(s))
-
-  // schemaStatements 只是把每条 DDL 包进 db.prepare()，传个记录的桩就能拿到原文
-  const fromCode = schemaStatements({ prepare: (sql) => sql })
-
-  assert.equal(fromFile.length, 5, 'schema.sql 里应当有 5 条 feedback 相关 DDL，实际 ' + fromFile.length)
-  assert.equal(fromCode.length, 5)
-
-  const fileDb = new DatabaseSync(':memory:')
-  const codeDb = new DatabaseSync(':memory:')
-  for (const sql of fromFile) fileDb.exec(sql)
-  for (const sql of fromCode) codeDb.exec(sql)
-
-  for (const table of ['feedback', 'feedback_login_attempts']) {
-    const a = fileDb.prepare('PRAGMA table_info(' + table + ')').all()
-    const b = codeDb.prepare('PRAGMA table_info(' + table + ')').all()
-    const shape = (list) => list.map((c) => c.name + ':' + c.type + ':' + c.notnull + ':' + (c.dflt_value ?? ''))
-    assert.deepEqual(
-      shape(a),
-      shape(b),
-      table + ' 两份定义不一致：文件 ' + JSON.stringify(shape(a)) + ' / 代码 ' + JSON.stringify(shape(b))
-    )
+test('空库、当前生产结构、历史缺列库都能升级，保留数据且可以重跑', async () => {
+  for (const kind of ['empty', 'current', 'legacy']) {
+    const database = new DatabaseSync(':memory:')
+    if (kind === 'current') database.exec(readFileSync(resolve(repoRoot, 'worker/schema.sql'), 'utf8'))
+    if (kind === 'legacy') database.exec("CREATE TABLE feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, kind TEXT NOT NULL, want TEXT NOT NULL, scene TEXT NOT NULL, contact TEXT, status TEXT NOT NULL DEFAULT 'new', ip_hash TEXT, created_at INTEGER NOT NULL)")
+    if (kind !== 'empty') database.exec("INSERT INTO feedback (category, kind, want, scene, created_at) VALUES ('其他', 'gap', '原来的反馈', '原来的场景', 1)")
+    if (kind === 'current') database.exec(`
+      INSERT INTO counters VALUES ('/existing', 123);
+      INSERT INTO daily_views VALUES ('/existing', '2026-10-01', 12);
+      INSERT INTO feedback_login_attempts VALUES ('hashed-ip', 3, 100);
+      UPDATE feedback SET ticket = 'ABCD-EFGH', status = 'planned', contact = 'original contact';
+    `)
+    const adapter = migrationDb(database)
+    assert.deepEqual(await migrateDatabase(adapter), MIGRATIONS.map((item) => item.id))
+    assert.deepEqual(await migrateDatabase(adapter), [])
+    assert.deepEqual(await migrateDatabase(adapter, { check: true }), [])
+    const names = database.prepare('PRAGMA table_info(feedback)').all().map((column) => column.name).sort()
+    assert.deepEqual(names, rows('PRAGMA table_info(feedback)').map((column) => column.name).sort())
+    assert.equal(database.prepare('SELECT COUNT(*) AS n FROM feedback').get().n, kind === 'empty' ? 0 : 1)
+    if (kind !== 'empty') assert.equal(database.prepare('SELECT want FROM feedback').get().want, '原来的反馈')
+    if (kind === 'current') {
+      assert.equal(database.prepare('SELECT views FROM counters').get().views, 123)
+      assert.equal(database.prepare('SELECT views FROM daily_views').get().views, 12)
+      assert.equal(database.prepare('SELECT fails FROM feedback_login_attempts').get().fails, 3)
+      const preserved = database.prepare('SELECT ticket, status, contact FROM feedback').get()
+      assert.deepEqual({ ...preserved }, { ticket: 'ABCD-EFGH', status: 'planned', contact: 'original contact' })
+    }
+    for (const index of ['idx_feedback_ticket', 'idx_feedback_request_id', 'idx_daily_views_day']) {
+      assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?").get(index))
+    }
+    database.close()
   }
 })
 
-test('feedback 表的列齐全（少一列就说明迁移没跟上）', () => {
-  const names = rows('PRAGMA table_info(feedback)').map((c) => c.name)
-  assert.deepEqual(names, [
-    'id', 'category', 'kind', 'want', 'scene', 'article', 'contact',
-    'status', 'resolved_label', 'resolved_url', 'reject_reason', 'suspicious',
-    'flag_reason', 'ip_hash', 'created_at', 'updated_at', 'ticket'
-  ])
-})
-
-/**
- * 上面那条测试是从零建表，永远比不出「线上老库缺列」。
- * 这条专门模拟线上那张早先建好的表：只要它缺 flag_reason / ticket，
- * INSERT 就会 `no such column` —— 表现是**所有提交 500、审计页 500**，
- * 而 ensureSchema 的报错是被吞掉的，症状会藏得很深。
- * （真实踩过：加了 ticket 和 flag_reason 两列，都只改 DDL 没写 ALTER。）
- */
-test('老库缺列时会把 ticket / flag_reason 补上，老数据不丢', async () => {
-  const legacy = new DatabaseSync(':memory:')
-  legacy.exec(
-    `CREATE TABLE feedback (
-       id         INTEGER PRIMARY KEY AUTOINCREMENT,
-       category   TEXT    NOT NULL,
-       kind       TEXT    NOT NULL,
-       want       TEXT    NOT NULL,
-       scene      TEXT    NOT NULL,
-       contact    TEXT,
-       status     TEXT    NOT NULL DEFAULT 'new',
-       ip_hash    TEXT,
-       created_at INTEGER NOT NULL
-     )`
-  )
-  legacy.exec(
-    `INSERT INTO feedback (category, kind, want, scene, created_at)
-     VALUES ('其他', 'gap', '迁移前的老稿子', '场景', 1)`
-  )
-  const legacyDb = {
-    prepare: (sql) => new Stmt(legacy, sql),
-    async batch(statements) {
-      const out = []
-      for (const statement of statements) out.push(await statement.run())
-      return out
+test('迁移中断后不记成功，部分新增列可以安全重跑', async () => {
+  const database = new DatabaseSync(':memory:')
+  database.exec(readFileSync(resolve(repoRoot, 'worker/schema.sql'), 'utf8'))
+  const adapter = migrationDb(database)
+  let interrupted = false
+  const faulty = {
+    query: adapter.query,
+    async execute(statements) {
+      if (statements.some((sql) => sql.includes('ADD COLUMN request_id')) && !interrupted) {
+        database.exec(statements[0])
+        interrupted = true
+        throw new Error('simulated interruption')
+      }
+      return adapter.execute(statements)
     }
   }
+  await assert.rejects(migrateDatabase(faulty), /simulated interruption/)
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM kb_schema_migrations').get().n, 1)
+  assert.deepEqual(await migrateDatabase(adapter), ['002-feedback-idempotency'])
+  assert.deepEqual(await migrateDatabase(adapter), [])
+  database.close()
+})
 
-  await bootstrapSchema(legacyDb)
+test('迁移检查不写库，未知版本与已修改迁移都明确报错', async () => {
+  const database = new DatabaseSync(':memory:')
+  const adapter = migrationDb(database)
+  await assert.rejects(migrateDatabase(adapter, { check: true }), /Pending/)
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'").get().n, 0)
+  await migrateDatabase(adapter)
+  database.exec("UPDATE kb_schema_migrations SET checksum = 'changed' WHERE id = '001-adopt-schema'")
+  await assert.rejects(migrateDatabase(adapter), /changed after application/)
+  database.exec("DELETE FROM kb_schema_migrations; INSERT INTO kb_schema_migrations VALUES ('999-future', 'x', 'now')")
+  await assert.rejects(migrateDatabase(adapter), /unknown migration/)
+  database.close()
+})
 
-  const sorted = (list) => [...list].sort()
-  const names = legacy.prepare('PRAGMA table_info(feedback)').all().map((c) => c.name)
-  assert.ok(names.includes('flag_reason'), 'flag_reason 没补上：INSERT 会 no such column')
-  assert.ok(names.includes('ticket'), 'ticket 没补上：唯一索引本身就会报错')
-  assert.deepEqual(
-    sorted(names),
-    sorted(rows('PRAGMA table_info(feedback)').map((c) => c.name)),
-    '补完之后列应当和新库完全一致'
-  )
-  assert.equal(Number(legacy.prepare('SELECT COUNT(*) AS n FROM feedback').get().n), 1, '老数据不能丢')
+test('已手工加过幂等列但没有版本记录时也能纳入迁移', async () => {
+  const database = new DatabaseSync(':memory:')
+  database.exec(readFileSync(resolve(repoRoot, 'worker/schema.sql'), 'utf8'))
+  database.exec('ALTER TABLE feedback ADD COLUMN request_id TEXT; ALTER TABLE feedback ADD COLUMN request_hash TEXT')
+  const adapter = migrationDb(database)
+  await migrateDatabase(adapter)
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM kb_schema_migrations').get().n, MIGRATIONS.length)
+  assert.deepEqual(await migrateDatabase(adapter), [])
+  database.close()
+})
 
-  // 补完之后真的能按新列写入 —— 这就是线上那一步 500
-  legacy.exec(
-    `INSERT INTO feedback
-       (ticket, category, kind, want, scene, status, suspicious, flag_reason, ip_hash, created_at, updated_at)
-     VALUES ('AAAA-BBBB', '其他', 'gap', 'x', 'y', 'new', 0, 'no_token', 'h', 1, 1)`
-  )
-  assert.equal(Number(legacy.prepare('SELECT COUNT(*) AS n FROM feedback').get().n), 2)
-
-  // 幂等：isolate 冷启动可能重跑，重跑不该报错
-  await bootstrapSchema(legacyDb)
+test('反馈请求不执行建表或改表', async () => {
+  const guarded = { ...DB, prepare(sql) {
+    assert.doesNotMatch(sql, /^\s*(CREATE|ALTER|PRAGMA)\b/i)
+    return DB.prepare(sql)
+  } }
+  const res = await onRequestPost(ctx(post('/api/feedback', VALID, IP_A), { DB: guarded }))
+  assert.equal(res.status, 200)
 })
 
 /* ------------------------------------------------------------------ 提交 */
@@ -236,6 +240,76 @@ test('正常提交写入一行，状态是 new，不可疑', async () => {
   assert.equal(Number(row.suspicious), 0)
   assert.equal(row.contact, 'qq123')
   assert.ok(Number(row.created_at) > 0)
+})
+
+test('丢失响应后重复提交相同 requestId，只写一行并返回同一查询码', async () => {
+  const payload = { ...VALID, requestId: crypto.randomUUID() }
+  const first = await onRequestPost(ctx(post('/api/feedback', payload, IP_A)))
+  const receipt = await first.json()
+  const replay = await onRequestPost(ctx(post('/api/feedback', { ...payload, elapsed: 15000 }, IP_B)))
+  assert.equal(replay.status, 200)
+  assert.deepEqual(await replay.json(), receipt)
+  assert.equal(count('feedback'), 1)
+})
+
+test('并发重试通过数据库唯一约束去重', async () => {
+  const payload = { ...VALID, requestId: crypto.randomUUID() }
+  const responses = await Promise.all(Array.from({ length: 8 }, () => onRequestPost(ctx(post('/api/feedback', payload, IP_A)))))
+  const receipts = await Promise.all(responses.map((response) => response.json()))
+  assert.ok(responses.every((response) => response.status === 200))
+  assert.equal(new Set(receipts.map((receipt) => receipt.ticket)).size, 1)
+  assert.equal(count('feedback'), 1)
+})
+
+test('相同 ID 的不同内容返回 409，不能覆盖原反馈或泄露它的查询码', async () => {
+  const payload = { ...VALID, requestId: crypto.randomUUID() }
+  await onRequestPost(ctx(post('/api/feedback', payload, IP_A)))
+  const changed = await onRequestPost(ctx(post('/api/feedback', { ...payload, want: '另一条意见' }, IP_A)))
+  assert.equal(changed.status, 409)
+  assert.equal((await changed.json()).ticket, undefined)
+  assert.equal(count('feedback'), 1)
+  assert.equal(rows('SELECT want FROM feedback')[0].want, VALID.want)
+})
+
+test('非法 requestId 不写库；旧客户端没有 ID 仍可提交', async () => {
+  for (const requestId of ['short', 'x'.repeat(81), {}, 'bad/identifier/with/slashes']) {
+    const response = await onRequestPost(ctx(post('/api/feedback', { ...VALID, requestId }, IP_A)))
+    assert.equal(response.status, 400)
+  }
+  assert.equal(count('feedback'), 0)
+  assert.equal((await onRequestPost(ctx(post('/api/feedback', VALID, IP_A)))).status, 200)
+})
+
+test('原生表单提供 requestId 时也返回同一 303 查询码', async () => {
+  const payload = { ...VALID, elapsed: String(VALID.elapsed), requestId: crypto.randomUUID() }
+  const send = () => onRequestPost(ctx(new Request(BASE + '/api/feedback', {
+    method: 'POST', body: new URLSearchParams(payload)
+  })))
+  const first = await send()
+  const second = await send()
+  assert.equal(first.status, 303)
+  assert.equal(first.headers.get('Location'), second.headers.get('Location'))
+  assert.equal(count('feedback'), 1)
+})
+
+test('浏览器重试和持久化补发复用 ID，编辑内容建立新提交', async () => {
+  const first = prepareSubmission(VALID, null)
+  const retry = prepareSubmission({ ...VALID, elapsed: 20000 }, first)
+  assert.equal(first.requestId, retry.requestId)
+  const restored = await restoreSubmission(JSON.parse(JSON.stringify(first)))
+  assert.equal(restored.requestId, first.requestId)
+  const edited = prepareSubmission({ ...VALID, want: '改过的内容' }, restored)
+  assert.notEqual(edited.requestId, first.requestId)
+  assert.equal(submissionContent(VALID), submissionContent(first))
+  const [legacy1, legacy2] = await Promise.all([restoreSubmission(VALID), restoreSubmission(VALID)])
+  assert.equal(legacy1.requestId, legacy2.requestId, '不同标签页升级老待发也要拿到同一个 ID')
+})
+
+test('只有 ok=true 且完整查询码才算成功回执', () => {
+  for (const data of [null, {}, { ok: true }, { ok: false, ticket: 'ABCD-EFGH' }, { ok: true, ticket: 'bad' }]) {
+    assert.equal(feedbackReceipt(data), null)
+  }
+  assert.equal(feedbackReceipt({ ok: true, ticket: 'ABCD-EFGH' }), 'ABCD-EFGH')
 })
 
 test('蜜罐被填：仍然入库，但标记为可疑（不丢数据）', async () => {
@@ -966,7 +1040,7 @@ test('提交接口会返回查询码，前端也必须把它带去完成页', ()
   assert.ok(api.includes('ticket'), '接口要生成查询码')
   // 只判断 res.ok 就把响应体扔掉的话，用户拿不到编号、查不了自己那条
   assert.ok(form.includes("'/wanted-done?t='"), '前端跳转没带上查询码')
-  assert.ok(form.includes('data.ticket'), '前端没从响应体里读查询码')
+  assert.ok(form.includes('feedbackReceipt(data)'), '前端必须验证完整回执后才能清除草稿')
 })
 
 test('表单里没有任何第三方脚本（Turnstile 已撤）', () => {
@@ -1023,13 +1097,11 @@ test('未知路径 404', async () => {
   assert.equal(res.status, 404)
 })
 
-test('分类枚举与前端一致（前端那份是手抄的）', () => {
-  const source = readFileSync(
-    resolve(repoRoot, 'vitepress-docs/.vitepress/theme/FeedbackForm.vue'),
-    'utf8'
-  )
-  const match = source.match(/const CATEGORIES = \[([\s\S]*?)\]/)
-  assert.ok(match, '没在 FeedbackForm.vue 里找到 CATEGORIES')
-  const fromClient = [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1])
-  assert.deepEqual(fromClient, CATEGORIES, '前后端分类枚举不一致')
+test('所有反馈界面引用共享契约', () => {
+  for (const file of ['FeedbackForm.vue', 'FeedbackAudit.vue', 'FeedbackStatus.vue']) {
+    const source = readFileSync(resolve(repoRoot, 'vitepress-docs/.vitepress/theme', file), 'utf8')
+    assert.ok(source.includes('shared/feedback-contract.js'))
+    assert.doesNotMatch(source, /const (CATEGORIES|STATUSES) = \[/)
+  }
+  assert.ok(CATEGORIES.includes('一卡通'))
 })
