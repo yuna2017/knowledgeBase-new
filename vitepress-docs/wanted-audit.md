@@ -8,6 +8,10 @@ head:
       content: noindex, nofollow
 ---
 
+<script setup>
+import FeedbackAudit from './.vitepress/theme/FeedbackAudit.vue'
+</script>
+
 # 反馈审计
 
 维护者用。口令在部署环境里，变量名 `FEEDBACK_ADMIN_PASSWORD`。

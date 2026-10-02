@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import ArticleFreshness from './ArticleFreshness.vue'
 import ArticleTags from './ArticleTags.vue'
 import FrontmatterAuthors from './FrontmatterAuthors.vue'
 import ArticleViews from './ArticleViews.vue'
-import TopViews from './TopViews.vue'
-import PinnedArticles from './PinnedArticles.vue'
-import HomeCards from './HomeCards.vue'
 import RecruitBanner from './RecruitBanner.vue'
 import { useMermaid } from './mermaid'
 import { isAggregatePage, isRankableArticle } from './page-kind'
@@ -18,6 +15,11 @@ import { FEEDBACK } from '../shared/contact'
 
 const { Layout } = DefaultTheme
 const { page } = useData()
+
+// 首页插槽实际渲染时才加载组件及文章元数据；SSR 仍会输出完整首页。
+const HomeCards = defineAsyncComponent(() => import('./HomeCards.vue'))
+const PinnedArticles = defineAsyncComponent(() => import('./PinnedArticles.vue'))
+const TopViews = defineAsyncComponent(() => import('./TopViews.vue'))
 
 // 把正文里的 ```mermaid 代码块渲染成图（按需加载 mermaid，见 mermaid.ts）
 useMermaid()

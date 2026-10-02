@@ -4,6 +4,11 @@ authors:
   - liugu2023
 ---
 
+<script setup>
+import FeedbackLookup from './.vitepress/theme/FeedbackLookup.vue'
+import FeedbackStatus from './.vitepress/theme/FeedbackStatus.vue'
+</script>
+
 # 反馈执行状态
 
 这一页回答「我提的东西有人管吗」。

@@ -8,6 +8,10 @@ head:
       content: noindex, nofollow
 ---
 
+<script setup>
+import FeedbackLookup from './.vitepress/theme/FeedbackLookup.vue'
+</script>
+
 # 收到了
 
 谢谢，已经进队列了。

@@ -7,6 +7,10 @@ authors:
 # 这些资源提示也一起删了：不能再为用不到的第三方连接预热。
 ---
 
+<script setup>
+import FeedbackForm from './.vitepress/theme/FeedbackForm.vue'
+</script>
+
 # 告诉我们缺什么
 
 没找到想要的东西，或者看到哪篇内容过时了、写错了，都可以在这里说一声。不用会 Git，也不用注册。
