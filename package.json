@@ -8,10 +8,20 @@
   },
   "scripts": {
     "dev": "vitepress dev vitepress-docs",
+    "dev:full": "node scripts/dev-full.mjs",
     "check:docs": "node scripts/check-docs.mjs",
+    "check:site": "node scripts/check-site.mjs",
+    "check:search": "node scripts/check-search.mjs",
+    "check:workers": "wrangler deploy --dry-run --config worker/wrangler.toml --outdir .wrangler/check-views && wrangler deploy --dry-run --config worker-ranking/wrangler.toml --outdir .wrangler/check-ranking",
+    "test": "node --no-warnings --test scripts/test-*.mjs",
     "test:feedback": "node --no-warnings scripts/test-feedback-api.mjs",
+    "test:local": "node scripts/dev-full.mjs --smoke",
+    "db:migrate:local": "node scripts/migrate-d1.mjs --local --persist-to .wrangler/state",
+    "db:migrate:remote": "node scripts/migrate-d1.mjs --remote",
     "prebuild": "npm run check:docs",
     "build": "vitepress build vitepress-docs",
+    "postbuild": "npm run check:site && npm run check:search",
+    "verify": "npm test && npm run build && node worker-ranking/gen-titles.mjs && npm run check:workers && npm run test:local",
     "preview": "vitepress preview vitepress-docs"
   },
   "devDependencies": {

@@ -96,6 +96,7 @@ dist
 .vuepress/dist
 
 # VitePress generated files
+.vitepress/cache/
 vitepress-docs/.vitepress/cache/
 vitepress-docs/.vitepress/dist/
 
@@ -103,6 +104,7 @@ vitepress-docs/.vitepress/dist/
 .wrangler/
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 
 # Serverless directories
 .serverless/

@@ -1,0 +1,14 @@
+# 实际发布项目名由工作流的 --project-name 指定。
+name = "yuna-knowledge-base"
+pages_build_output_dir = "vitepress-docs/.vitepress/dist"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yuna-kb-views"
+database_id = "fa3ebf5a-5c7e-4c46-92a8-67f6bd65d2aa"
+
+# 本地 pages dev 始终使用本地 D1。远端预览默认不绑定生产数据库；
+# 需要远端完整预览时，先创建独立预览库再显式配置此环境。
+[env.preview]
+d1_databases = []

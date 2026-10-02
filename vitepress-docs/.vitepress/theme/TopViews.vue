@@ -13,7 +13,7 @@ interface TopItem {
 /** 首页展示几条 */
 const DISPLAY_COUNT = 3
 
-const api = import.meta.env.VITE_VIEWS_API
+const api = import.meta.env.VITE_VIEWS_API ?? ''
 const items = ref<TopItem[]>([])
 
 // 路径 → 标题与摘要，把 D1 里存的站内路径还原成可读内容。
@@ -47,7 +47,6 @@ const ranked = computed(() =>
 )
 
 onMounted(async () => {
-  if (!api) return
   try {
     // 多取一些再过滤，否则前几名里混入聚合页时会不够 DISPLAY_COUNT 条
     const res = await fetch(api.replace(/\/$/, '') + '/api/views/top?limit=20')

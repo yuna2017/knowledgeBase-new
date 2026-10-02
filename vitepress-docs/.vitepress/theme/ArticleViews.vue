@@ -5,14 +5,12 @@ import { useRoute } from 'vitepress'
 const route = useRoute()
 const views = ref<number | null>(null)
 
-const api = import.meta.env.VITE_VIEWS_API
+const api = import.meta.env.VITE_VIEWS_API ?? ''
 let requestId = 0
 let activeController: AbortController | null = null
 let stopRouteWatch: (() => void) | undefined
 
 async function loadViews(path: string) {
-  if (!api) return
-
   const currentRequestId = ++requestId
   activeController?.abort()
   const controller = new AbortController()

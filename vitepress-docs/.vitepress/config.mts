@@ -190,6 +190,11 @@ export default defineConfig({
   },
 
   vite: {
+    server: {
+      proxy: process.env.DOCS_API_PROXY
+        ? { '/api': { target: process.env.DOCS_API_PROXY, changeOrigin: false } }
+        : undefined
+    },
     plugins: [
       // 构建时读 git log，生成每页的修订历史数据。
       // 只用它的「页面历史」区块，作者展示仍由 frontmatter + FrontmatterAuthors.vue
