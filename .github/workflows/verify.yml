@@ -1,0 +1,40 @@
+name: 站点统一验证
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: 校验 PR 置顶保护
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-pinned.mjs
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: 验证文档、接口、迁移、构建产物及完整本地运行
+        run: npm run verify
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+      - name: 保存经过验证的发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-site-${{ github.sha }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            vitepress-docs/.vitepress/dist
+            worker-ranking/src/page-titles.json

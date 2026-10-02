@@ -1,9 +1,8 @@
-name: PR 文档检查
+name: PR 文档与接口检查
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -13,56 +12,5 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 与 deploy.yml 里那个 test job 内容相同。之所以两边都留一份：PR 走这里，
-  # owner 直推 main 走那边，谁都不能少。改动时记得同步。
-  feedback-tests:
-    name: 需求反馈接口测试
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          # 需要 Node ≥ 22.5（node:sqlite）；构建仍是 Node 20，两者互不影响
-          node-version: 24
-
-      - name: Run feedback API tests
-        run: npm run test:feedback
-
-  docs-check:
-    name: Markdown、链接与作者检查
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          # 与 deploy.yml 保持一致：lastUpdated、页面历史、标签页和「最近更新」
-          # 都依赖每个文件的完整提交历史，浅克隆会让这些数据全部为空，
-          # PR 检查就验证不了生产实际会构建出的内容
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      # 置顶文章只允许 owner 直接 push 到 main 修改，任何 PR 一律不允许改动。
-      # 该脚本只跑在 pull_request 流程里；owner 的 main 直推走 deploy.yml（push 触发），
-      # 不经过这里，所以无需按作者区分，PR 里改动置顶文章直接拦截。
-      - name: 校验置顶文章（仅限 owner 直接提交）
-        run: node scripts/check-pinned.mjs
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate Markdown, authors and static build
-        run: npm run build
+  verify:
+    uses: ./.github/workflows/verify.yml

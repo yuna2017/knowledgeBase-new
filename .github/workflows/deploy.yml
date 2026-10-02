@@ -2,113 +2,73 @@ name: Deploy to Cloudflare Pages
 
 on:
   push:
-    branches:
-      - main  # 当 main 分支更新时触发
-  workflow_dispatch:  # 允许手动触发
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 整次生产发布串行完成，避免在迁移或多入口发布中途取消。
+concurrency:
+  group: production-site
+  cancel-in-progress: false
 
 jobs:
-  # 需求反馈接口的回归测试。
-  #
-  # 单独一个 job 是因为它需要 Node ≥ 22.5（用 node:sqlite 垫假 D1），而构建固定在
-  # Node 20；两者各自用自己的版本，互不影响。测试只用 Node 内置模块，不用 npm ci。
-  #
-  # 放在 deploy.yml 而不是只放 pr-check.yml：这个仓库的日常是 owner 直接推 main，
-  # 根本不经过 PR 检查，只有挂在这里才拦得住。
-  test:
-    name: 需求反馈接口测试
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Run feedback API tests
-        run: npm run test:feedback
+  verify:
+    uses: ./.github/workflows/verify.yml
 
   deploy:
-    needs: test
+    needs: verify
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # lastUpdated 依赖每个文件的提交历史，浅克隆会让所有页面拿到同一个时间
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate documentation and build
-        run: npm run build
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-site-${{ github.sha }}
+          path: .
+      - name: 仅发布当前 main 的最新提交
+        id: current
         env:
-          # 阅读计数走文档站同源的 Pages Function，避免大陆对 *.workers.dev 的网络限制
-          VITE_VIEWS_API: https://docs.yuna.team
-
-      # cloudflare/pages-action 已废弃并归档（GitHub 解析不到该 action，会在下载步骤直接失败），
-      # 改用官方接替的 wrangler-action；accountId / apiToken 参数名不变，原 secrets 无需改动。
-      # 项目名从 projectName 参数改为 pages deploy 的 --project-name，构建输出目录则作为位置参数。
-      - name: Publish to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # 这里单指 action 下载的 wrangler 版本，与下方两个 Worker 的部署版本保持一致
-          wranglerVersion: '3'
-          command: pages deploy vitepress-docs/.vitepress/dist --project-name=${{ secrets.CLOUDFLARE_PROJECT_NAME }}
-
-      # 通知 Bing / Yandex 等搜索引擎重新抓取本次变更的页面。
-      # 必须放在发布之后：IndexNow 收到通知就会来抓，新内容得先上线。
-      # continue-on-error：站点这时已经发布成功，通知失败不该把部署标成红色。
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo 'main 已有更新，本次跳过发布，由更新的运行接替。'
+          fi
+      - name: 应用向后兼容的数据库迁移
+        if: steps.current.outputs.publish == 'true'
+        run: npm run db:migrate:remote
+      - name: 发布经过验证的静态站及 Pages Functions
+        if: steps.current.outputs.publish == 'true'
+        env:
+          PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PROJECT_NAME }}
+        run: npx --no-install wrangler pages deploy vitepress-docs/.vitepress/dist --project-name="$PAGES_PROJECT" --branch=main
+      - name: 发布兼容旧地址的统计入口
+        if: steps.current.outputs.publish == 'true'
+        run: npx --no-install wrangler deploy --config worker/wrangler.toml
+      - name: 发布同一版本的排行清单
+        if: steps.current.outputs.publish == 'true'
+        run: npx --no-install wrangler deploy --config worker-ranking/wrangler.toml
       - name: Notify IndexNow
+        if: steps.current.outputs.publish == 'true'
         continue-on-error: true
         run: node scripts/indexnow.mjs
         env:
-          # 手动触发时 github.event.before 为空，脚本会退回全量提交
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
-
-  # 阅读量 Worker 与排行 Worker：推送后自动重新生成文章清单
-  # （标题 / 上传时间）并重新部署，保证排行统计随文档更新，无需手动 wrangler。
-  deploy-workers:
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # gen-titles.mjs 用 git log 取每篇的上传时间
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Generate ranking page titles
-        run: node gen-titles.mjs
-        working-directory: worker-ranking
-
-      - name: Deploy views worker
-        run: npx wrangler@3 deploy
-        working-directory: worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Deploy ranking worker
-        run: npx wrangler@3 deploy
-        working-directory: worker-ranking
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
