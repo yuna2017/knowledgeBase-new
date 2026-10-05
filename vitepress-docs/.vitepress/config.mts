@@ -21,7 +21,11 @@ const REPO_URL = 'https://github.com/yuna2017/knowledgeBase-new'
  * 不注入「页面历史」区块的页面。
  * 首页是 home 布局，tags / recent 是聚合页，本身没有修订史可言。
  */
-const CHANGELOG_EXCLUDES = ['index.md', 'tags.md', 'recent.md']
+const CHANGELOG_EXCLUDES = [
+  'index.md', 'tags.md', 'recent.md', 'lessons.md',
+  'lessons/dev.md', 'lessons/security.md', 'lessons/ops.md',
+  'lessons/publicity.md', 'lessons/public.md'
+]
 
 /** tags/ 下是动态路由生成的标签页，同样不需要修订史。 */
 function isGeneratedPage(id: string): boolean {
@@ -211,7 +215,9 @@ export default defineConfig({
         excludes: CHANGELOG_EXCLUDES,
         // 动态路由生成的标签页，id 是 tags/校园网.md 这种解析后的路径，
         // 用 excludes 的字面名单匹配不到，只能靠这个函数拦
-        exclude: (id) => isGeneratedPage(id),
+        // 子目录授课页同时兼容 Windows 路径分隔符；具体讲义保留历史。
+        exclude: (id) => isGeneratedPage(id) ||
+          /[\\/]lessons[\\/](?:dev|security|ops|publicity|public)\.md$/.test(id),
         sections: {
           disableContributors: true
         }
@@ -388,6 +394,7 @@ export default defineConfig({
         ]
       },
       { text: '技术资源', link: '/tech-index' },
+      { text: '授课资料', link: '/lessons' },
       { text: '标签', link: '/tags' },
       { text: '最近更新', link: '/recent' },
       {

@@ -1,5 +1,6 @@
 /** Browser-safe page identity and classification, shared by the site and build tools. */
-const AGGREGATE_PATHS = new Set(['/tags', '/recent'])
+const LESSON_DEPARTMENT_PATHS = new Set(['/lessons/dev', '/lessons/security', '/lessons/ops', '/lessons/publicity'])
+const AGGREGATE_PATHS = new Set(['/tags', '/recent', '/lessons', '/lessons/public', ...LESSON_DEPARTMENT_PATHS])
 const NAVIGATION_PATHS = new Set(['/tech-index', '/campus-index'])
 const MAINTENANCE_PATHS = new Set(['/README', '/CONTRIBUTING', '/CONTEXT'])
 const FUNCTION_PATHS = new Set(['/wanted', '/wanted-done', '/wanted-status', '/wanted-audit'])
