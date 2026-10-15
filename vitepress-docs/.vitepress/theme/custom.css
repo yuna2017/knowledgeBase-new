@@ -90,6 +90,63 @@
   }
 }
 
+/*
+ * 授课分类页的讲义卡片。
+ *
+ * 清单在 Markdown 里仍是一条条链接（见 CONTRIBUTING），构建时由
+ * shared/lesson-cards.ts 换成这套结构。样式与标签页的 .tag-card 一致，
+ * 读者从「标签」和「授课资料」进来看到的是同一种卡片；
+ * 两边各自独立，改这里不会牵动标签页。
+ */
+.lesson-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin: 24px 0;
+}
+
+.lesson-card {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  text-decoration: none !important;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.lesson-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  transform: translateY(-1px);
+}
+
+.lesson-card__title {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.lesson-card:hover .lesson-card__title {
+  color: var(--vp-c-brand-1);
+}
+
+/* 站外讲义在文档目录里查不到，没有摘要，卡片就只有标题 */
+.lesson-card__desc {
+  flex: 1;
+  margin: 8px 0 0 !important;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lesson-card__date {
+  margin-top: 12px;
+  color: var(--vp-c-text-3);
+  font-size: 13px;
+}
+
 .VPDocFooter .last-updated {
   display: none;
 }

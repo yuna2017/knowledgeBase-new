@@ -7,6 +7,7 @@ import {
 import { InlineLinkPreviewElementTransform } from '@nolebase/vitepress-plugin-inline-link-preview/markdown-it'
 import { defineConfig } from 'vitepress'
 import { FEEDBACK, ORGANIZATION, QQ_GROUP } from './shared/contact'
+import { LessonCards } from './shared/lesson-cards'
 import { extractDescription, truncate } from './shared/markdown'
 import { tokenizeSearch, searchOptions } from '../../shared/search.mjs'
 import { isSearchablePage } from '../../shared/documents/page-kind.mjs'
@@ -246,6 +247,10 @@ export default defineConfig({
       }))
       // 站内链接悬停时弹出目标页面的预览
       md.use(InlineLinkPreviewElementTransform)
+      // 授课分类页的讲义清单渲染成卡片（摘要与时间取自文档目录）。
+      // 注册在预览插件之后：本插件替换的是整段列表 token，
+      // 两者都按 token.type 判断，先后不影响结果（见 shared/lesson-cards.ts）。
+      md.use(LessonCards)
     }
   },
 
