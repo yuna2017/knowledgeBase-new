@@ -85,7 +85,7 @@ git log --oneline              # 查看提交历史
 
 ## 连接 GitHub：零命令一键推送到云端（5 min）
 
-- 注册GitHub账号（https://github.com/join）（注册一个简短的英文用户名）
+- 注册GitHub账号[(https://github.com/join)](https://github.com/join)（注册一个简短的英文用户名）
 
 ### 回到VS Code：
 
