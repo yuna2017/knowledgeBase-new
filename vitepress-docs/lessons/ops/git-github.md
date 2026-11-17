@@ -63,17 +63,18 @@ git config --global user.email "你的GitHub邮箱"
 
 #### 1. 什么是快照（Snapshot）？
 Git 不记录琐碎的行级差量补丁，而是把工程作为一个整体管理：**每次提交（Commit），都相当于为整个目录拍摄一张完整的“快照”**。
-- **改动过的文件**：完整保存改动后的新版本。
-- **未改动的文件**：仅保留指向已有快照的链接，不浪费额外磁盘空间。
+- Git 在逻辑上记录每次提交对应的完整项目状态；
+- Git 会复用未变化的对象以节省空间；
 - **优势**：回溯历史时无需像倒带一样逐行计算累加差异，而是直接切换到对应快照的完整状态。
+> Git 历史默认具有可追溯性，但通过 rebase、强制推送等操作仍可以改写历史。
 
 #### 2. 为什么每次提交都有哈希值（如 `7f3a8b2`）？
-每次执行 Commit 时，Git 会把该次提交的文件内容、元数据及上一次提交的引用打包，通过哈希算法（SHA-1）计算出一串 40 位的十六进制字符串（通常简写为前 7 位，如 `3b1a7d6`）。
+每次执行 Commit 时，Git 会把该次提交的文件内容、元数据及上一次提交的引用打包，默认通过哈希算法（SHA-1）计算出一串 40 位的十六进制字符串（通常简写为前 7 位，如 `3b1a7d6`）。
 
 哈希值的核心作用：
 - **内容一致则哈希必相同**：文件内容只要未变，计算出的哈希完全一致。
 - **内容微变则哈希剧变**：哪怕仅改动一个字符或空格，哈希值都会完全不同。
-- **秒级比对匹配**：在比对本地代码与远程代码是否一致时，Git 无需逐行扫描海量文件，只需比对两端哈希值即可在毫秒级内确认是否匹配，同时也保障了历史记录不可被篡改。
+- **精准比对匹配**：在比对本地代码与远程代码是否一致时，Git 无需逐行扫描海量文件，只需比对两端哈希值即可确认是否匹配，同时也保障了历史记录不可被篡改。
 
 #### 3. 三大区域与流转关系
 ```text
@@ -103,7 +104,14 @@ git log --oneline              # 查看单行历史提交记录
 >
 > 查验旧版本建议使用 `git show <提交号>`。`git checkout <提交号>` 会进入 detached HEAD 状态，并不等同于安全的历史回退。如需撤销已推送的提交，推荐使用 `git revert <提交号>` 生成反向提交。
 
----
+此后的日常操作中你可能还会用到：
+
+```bash
+git remote -v                  # 检查远程仓库地址
+git fetch origin               # 只获取远程更新，不修改当前分支
+git pull                       #获取并整合远程更新；
+git push                       #推送本地提交到远程仓库
+```
 
 ## 进阶难度：代码上云与 SSH 连接
 
@@ -158,7 +166,7 @@ git log --oneline              # 查看单行历史提交记录
 ```bash
 ssh-keygen -t ed25519 -C "你的GitHub邮箱@example.com"
 ```
-提示输入保存路径与密码时，**连续回车 3 次** 保持默认（不设置 passphrase）。
+提示输入保存路径与密码时，初学建议 **连续回车 3 次** 保持默认（不设置 passphrase）。
 
 ##### 第二步：复制公钥文本
 - **Windows（PowerShell）**：
@@ -278,9 +286,9 @@ Issue 是开源项目的公开工单与讨论区：
 
 ## 推荐学习资源
 
+- [Missing Semester：版本控制与 Git 数据模型](https://missing-semester-tw.github.io/2026/version-control/)：MIT 经典公开课，适合希望深入理解底层 DAG 图结构与对象存储的同学课后选读。
 - [Pro Git 中文版](https://git-scm.com/book/zh/v2)：官方权威指南，免费在线阅读
 - [Learn Git Branching](https://learngitbranching.js.org/?locale=zh_CN)：可视化交互式分支练习网站
 - [GitHub Skills](https://skills.github.com/)：官方互动教程
 - [GitHub 身份验证说明](https://docs.github.com/en/authentication)
 - [GitHub SSH over 443](https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port)
-- [Missing Semester：版本控制与 Git 数据模型](https://missing-semester-tw.github.io/2026/version-control/)：MIT 经典公开课，适合希望深入理解底层 DAG 图结构与对象存储的同学课后选读。
